@@ -1,0 +1,26 @@
+# Environment
+.env
+
+# Bot runtime files
+gameday-bot/gameday.db
+gameday-bot/espn_ids.json
+gameday-bot/teams.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Claude Code
+.claude/
+
+# Context docs
+context/
+
+# PyCharm
+.idea/
+
+# macOS
+.DS_Store

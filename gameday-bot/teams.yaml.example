@@ -1,0 +1,64 @@
+# Gameday Bot — Team Configuration
+#
+# Add or remove teams here. The bot will watch every team listed.
+#
+# Required fields:
+#   name:   Full team name as ESPN displays it (used for matching)
+#   sport:  basketball | baseball | football | hockey
+#   league: nba | mlb | nfl | nhl
+#
+# Optional fields:
+#   stadium_coords: [lat, lon]  — outdoor venues only (NFL/MLB).
+#                                 Omit or set to null for indoor/retractable-roof venues.
+#
+# Disambiguation: teams with identical nicknames in different leagues (Kings, Giants,
+# Cardinals, etc.) are safe as long as sport+league differ. The bot matches each team
+# within its own sport/league bucket.
+
+teams:
+  - name: Los Angeles Lakers
+    sport: basketball
+    league: nba
+
+  - name: Los Angeles Dodgers
+    sport: baseball
+    league: mlb
+    stadium_coords: [34.0739, -118.2400]  # Dodger Stadium — outdoor
+
+  - name: Los Angeles Rams
+    sport: football
+    league: nfl
+    stadium_coords: null  # SoFi Stadium — retractable roof
+
+  - name: Los Angeles Kings
+    sport: hockey
+    league: nhl
+
+  - name: Seattle Seahawks
+    sport: football
+    league: nfl
+    stadium_coords: [47.5952, -122.3316]  # Lumen Field — outdoor
+
+  - name: Chicago Cubs
+    sport: baseball
+    league: mlb
+    stadium_coords: [41.9484, -87.6553]  # Wrigley Field — outdoor
+
+  - name: Pittsburgh Steelers
+    sport: football
+    league: nfl
+    stadium_coords: [40.4468, -80.0158]  # Acrisure Stadium — outdoor
+
+  - name: Green Bay Packers
+    sport: football
+    league: nfl
+    stadium_coords: [44.5013, -88.0622]  # Lambeau Field — outdoor
+
+  - name: San Francisco 49ers
+    sport: football
+    league: nfl
+    stadium_coords: [37.4033, -121.9694]  # Levi's Stadium — outdoor
+
+  - name: Seattle Kraken
+    sport: hockey
+    league: nhl
