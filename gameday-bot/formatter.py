@@ -98,12 +98,14 @@ def build_final_blocks(summary, sport: str) -> list[dict]:
     else:
         winner = summary.away_team
 
+    verb = "win" if winner.rstrip("!").endswith("s") else "wins"
+
     blocks = [
         _header(
             f"🏁 FINAL: {summary.away_team} {summary.away_score} — "
             f"{summary.home_team} {summary.home_score}"
         ),
-        _section(f"*{winner} wins!*"),
+        _section(f"*{winner} {verb}!*"),
     ]
 
     performers = _build_top_performers(summary, sport)
