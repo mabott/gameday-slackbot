@@ -68,7 +68,7 @@ def build_pregame_blocks(
         blocks.append(_section(blurb))
 
     blocks.append(_divider())
-    blocks.append(_section("🧵 Thread your takes below. Keep the main channel clean!"))
+    blocks.append(_section("🧵 Discuss the game and provide hot takes in the thread!"))
 
     return blocks
 

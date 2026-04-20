@@ -25,7 +25,8 @@ def generate_blurb(game_meta: dict) -> str:
     try:
         prompt = (
             "Generate a 2-3 sentence game day preview blurb for a sports Slack channel. "
-            "Be punchy and fan-friendly. No fluff. Focus on the most interesting storyline.\n\n"
+            "Be punchy and fan-friendly. No fluff, but a bit of snark is welcome. "
+            "Focus on the most interesting storyline.\n\n"
             f"Game: {game_meta['away_team']} @ {game_meta['home_team']}\n"
             f"Sport: {game_meta['sport']}\n"
             f"Records: {game_meta.get('away_record', 'N/A')} vs {game_meta.get('home_record', 'N/A')}\n"
