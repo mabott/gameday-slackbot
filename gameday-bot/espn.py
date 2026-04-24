@@ -233,7 +233,7 @@ def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -
 # Game summary (live + final)
 # ---------------------------------------------------------------------------
 
-def get_game_summary(sport: str, league: str, event_id: str) -> GameSummary | None:
+def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSummary]:
     url = f"{ESPN_BASE}/{sport}/{league}/summary"
     data = _get(url, params={"event": event_id})
     if not data:
@@ -327,7 +327,7 @@ def get_game_summary(sport: str, league: str, event_id: str) -> GameSummary | No
     )
 
 
-def get_team_record(sport: str, league: str, team_id: str) -> Record | None:
+def get_team_record(sport: str, league: str, team_id: str) -> Optional[Record]:
     url = f"{ESPN_BASE}/{sport}/{league}/teams/{team_id}"
     data = _get(url)
     if not data:

@@ -16,6 +16,7 @@ import time
 import sys
 import logging
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -87,7 +88,7 @@ SYNTHETIC_SUMMARY_FINAL = GameSummary(
 )
 
 
-def find_real_game(team_name: str) -> Game | None:
+def find_real_game(team_name: str) -> Optional[Game]:
     """Find the next upcoming game for a team within the next 7 days."""
     team_cfg = next((t for t in TEAM_CONFIG if team_name.lower() in t["name"].lower()), None)
     if not team_cfg:

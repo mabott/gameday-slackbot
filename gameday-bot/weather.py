@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Optional
 
 import requests
 
@@ -29,7 +30,7 @@ class WeatherResult:
     precip_pct: int
 
 
-def get_game_weather(team_name: str, game_start_utc: datetime) -> WeatherResult | None:
+def get_game_weather(team_name: str, game_start_utc: datetime) -> Optional[WeatherResult]:
     coords = STADIUM_COORDS.get(team_name)
     if not coords:
         return None

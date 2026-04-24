@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from typing import Optional
 
 import requests
 
@@ -29,7 +30,7 @@ def _fuzzy_match(config_name: str, odds_name: str) -> bool:
     return bool(cn_words & on_words)
 
 
-def get_odds(sport_path: str, home_team: str, away_team: str) -> OddsResult | None:
+def get_odds(sport_path: str, home_team: str, away_team: str) -> Optional[OddsResult]:
     if not ODDS_API_KEY:
         log.debug("ODDS_API_KEY not set, skipping odds fetch")
         return None
