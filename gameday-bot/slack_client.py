@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Optional
 
 from slack_bolt import App
 
@@ -10,7 +11,7 @@ log = logging.getLogger(__name__)
 app = App(token=SLACK_BOT_TOKEN) if not DRY_RUN else None
 
 
-def _dry_run_print(label: str, blocks: list, text: str, thread_ts: str | None = None):
+def _dry_run_print(label: str, blocks: list, text: str, thread_ts: Optional[str] = None):
     print(f"\n{'='*60}")
     print(f"DRY RUN — {label}")
     if thread_ts:
@@ -21,7 +22,7 @@ def _dry_run_print(label: str, blocks: list, text: str, thread_ts: str | None = 
     print("=" * 60)
 
 
-def post_message(blocks: list, text: str) -> str | None:
+def post_message(blocks: list, text: str) -> Optional[str]:
     """Post a new top-level message. Returns ts on success."""
     if DRY_RUN:
         _dry_run_print("POST MESSAGE", blocks, text)

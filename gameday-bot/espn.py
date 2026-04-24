@@ -4,6 +4,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Optional
 
 import requests
 
@@ -30,7 +31,7 @@ class Game:
     home_score: int = 0
     away_score: int = 0
     broadcasts: list = field(default_factory=list)
-    series_context: str | None = None
+    series_context: Optional[str] = None
 
 
 @dataclass
@@ -46,7 +47,7 @@ class GameSummary:
     period: str
     leaders: list = field(default_factory=list)
     goalie_saves: dict = field(default_factory=dict)
-    series_context: str | None = None
+    series_context: Optional[str] = None
     injuries: list = field(default_factory=list)
 
 
