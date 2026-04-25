@@ -167,15 +167,24 @@ def refresh_team_ids():
 # Schedule / scoreboard
 # ---------------------------------------------------------------------------
 
-def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -> list[Game]:
+def get_games_for_date(
+    sport: str,
+    league: str,
+    date: str,
+    team_ids: set[str],
+    include_final: bool = False,
+) -> list[Game]:
     """
     date: YYYYMMDD string
     team_ids: set of ESPN team IDs to filter for
+    include_final: if True, also return completed games (status="post")
     """
     url = f"{ESPN_BASE}/{sport}/{league}/scoreboard"
     data = _get(url, params={"dates": date})
     if not data:
         return []
+
+    _COMPLETE = ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
 
     games = []
     for event in data.get("events", []):
@@ -195,7 +204,10 @@ def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -
             continue
 
         status_type = event.get("status", {}).get("type", {}).get("name", "STATUS_SCHEDULED")
-        if status_type in ("STATUS_FINAL", "STATUS_POSTPONED", "STATUS_CANCELED"):
+        if status_type in ("STATUS_POSTPONED", "STATUS_CANCELED"):
+            continue
+        is_complete = status_type in _COMPLETE
+        if is_complete and not include_final:
             continue
 
         broadcasts = [
@@ -205,7 +217,9 @@ def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -
 
         series_ctx = None
         series = event.get("competitions", [{}])[0].get("series")
-        if series:
+        if isinstance(series, list):
+            series = series[0] if series else None
+        if isinstance(series, dict):
             summary = series.get("summary", "")
             if summary:
                 series_ctx = summary
@@ -219,7 +233,7 @@ def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -
             home_team_id=home["team"]["id"],
             away_team_id=away["team"]["id"],
             start_time=start_dt.astimezone(timezone.utc).replace(tzinfo=timezone.utc),
-            status="pre",
+            status="post" if is_complete else "pre",
             home_score=int(home.get("score", 0) or 0),
             away_score=int(away.get("score", 0) or 0),
             broadcasts=[b for b in broadcasts if b],
@@ -305,7 +319,9 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
 
     series_ctx = None
     series = data.get("header", {}).get("competitions", [{}])[0].get("series")
-    if series:
+    if isinstance(series, list):
+        series = series[0] if series else None
+    if isinstance(series, dict):
         series_ctx = series.get("summary", "")
 
     is_final = status_name in ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
