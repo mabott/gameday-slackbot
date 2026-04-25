@@ -99,6 +99,8 @@ def _schedule_game_jobs(scheduler: BackgroundScheduler, game, date_str: str):
             replace_existing=True,
         )
         log.info("Scheduled mid-game for %s at %s UTC", game.game_id, midgame_time)
+    elif not db.is_posted(game.game_id, "midgame"):
+        log.warning("Mid-game time %s already passed for %s — not scheduling", midgame_time, game.game_id)
 
     if not db.is_posted(game.game_id, "final") and poller_time > now:
         scheduler.add_job(

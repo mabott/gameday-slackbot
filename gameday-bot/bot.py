@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.executors.pool import ThreadPoolExecutor
 
 import db
 import espn
@@ -54,7 +55,19 @@ def main():
     jobstores = {
         "default": SQLAlchemyJobStore(url=f"sqlite:///{DB_PATH}"),
     }
-    _apscheduler = BackgroundScheduler(jobstores=jobstores, timezone="UTC")
+    executors = {
+        "default": ThreadPoolExecutor(20),
+    }
+    job_defaults = {
+        "misfire_grace_time": 3600,  # don't drop jobs that fire up to 1hr late
+        "coalesce": True,
+    }
+    _apscheduler = BackgroundScheduler(
+        jobstores=jobstores,
+        executors=executors,
+        job_defaults=job_defaults,
+        timezone="UTC",
+    )
     _apscheduler.start()
     log.info("Scheduler started")
 
