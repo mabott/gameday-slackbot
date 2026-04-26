@@ -41,17 +41,17 @@ def build_pregame_thread_blocks(
     weather=None,
     blurb: str = "",
 ) -> list[dict]:
-    lines = [
-        f"• *Records:* {game.away_team} ({away_record}) vs {game.home_team} ({home_record})",
-    ]
+    lines = []
+
+    if game.series_context:
+        lines.append(f"• *Series:* {game.series_context}")
+    elif home_record or away_record:
+        lines.append(f"• *Records:* {game.away_team} ({away_record}) vs {game.home_team} ({home_record})")
 
     if odds:
         away_line = f"{game.away_team} {odds.away_spread}"
         home_line = f"{game.home_team} {odds.home_spread}"
         lines.append(f"• *Spread:* {away_line} | {home_line} | O/U {odds.total}  _{odds.bookmaker}_")
-
-    if game.series_context:
-        lines.append(f"• *Series:* {game.series_context}")
 
     if weather:
         lines.append(
