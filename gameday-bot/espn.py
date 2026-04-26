@@ -32,6 +32,7 @@ class Game:
     away_score: int = 0
     broadcasts: list = field(default_factory=list)
     series_context: Optional[str] = None
+    venue: str = ""
 
 
 @dataclass
@@ -224,6 +225,8 @@ def get_games_for_date(
             if summary:
                 series_ctx = summary
 
+        venue = event.get("competitions", [{}])[0].get("venue", {}).get("fullName", "")
+
         games.append(Game(
             game_id=event["id"],
             sport=sport,
@@ -238,6 +241,7 @@ def get_games_for_date(
             away_score=int(away.get("score", 0) or 0),
             broadcasts=[b for b in broadcasts if b],
             series_context=series_ctx,
+            venue=venue,
         ))
 
     return games

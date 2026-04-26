@@ -184,14 +184,7 @@ def _run_pregame(game_id: str, sport: str, league: str):
     except Exception as exc:
         log.warning("Blurb generation failed: %s", exc)
 
-    blocks = formatter.build_pregame_blocks(
-        game=game,
-        home_record=home_record,
-        away_record=away_record,
-        odds=odds_result,
-        weather=weather_result,
-        blurb=blurb_text,
-    )
+    blocks = formatter.build_pregame_blocks(game=game)
     text = f"Game Day: {row['away_team']} @ {row['home_team']}"
     ts = slack_client.post_message(blocks=blocks, text=text)
 
@@ -199,6 +192,17 @@ def _run_pregame(game_id: str, sport: str, league: str):
         db.save_slack_ts(game_id, ts)
         db.mark_posted(game_id, "pregame")
         log.info("Pre-game posted for %s (ts=%s)", game_id, ts)
+
+        thread_blocks = formatter.build_pregame_thread_blocks(
+            game=game,
+            home_record=home_record,
+            away_record=away_record,
+            odds=odds_result,
+            weather=weather_result,
+            blurb=blurb_text,
+        )
+        thread_text = f"Pre-game details: {row['away_team']} @ {row['home_team']}"
+        slack_client.post_reply(blocks=thread_blocks, text=thread_text, thread_ts=ts)
     else:
         log.error("Pre-game post failed for %s", game_id)
 

@@ -22,7 +22,18 @@ def _header(text: str) -> dict:
     return {"type": "header", "text": {"type": "plain_text", "text": text, "emoji": True}}
 
 
-def build_pregame_blocks(
+def build_pregame_blocks(game) -> list[dict]:
+    emoji = SPORT_EMOJIS.get(game.sport, "🏟️")
+    parts = [f"{emoji} GAME DAY: {game.away_team} @ {game.home_team}",
+             _pacific(game.start_time)]
+    if game.venue:
+        parts.append(game.venue)
+    if game.broadcasts:
+        parts.append(", ".join(game.broadcasts))
+    return [_header(" · ".join(parts))]
+
+
+def build_pregame_thread_blocks(
     game,
     home_record: str,
     away_record: str,
@@ -30,22 +41,9 @@ def build_pregame_blocks(
     weather=None,
     blurb: str = "",
 ) -> list[dict]:
-    emoji = SPORT_EMOJIS.get(game.sport, "🏟️")
-    sport_label = game.sport.upper()
-
-    blocks = [
-        _header(f"{emoji} GAME DAY: {game.away_team} @ {game.home_team}"),
-        _divider(),
-    ]
-
     lines = [
-        f"• *{_sport_time_label(game.sport)}:* {_pacific(game.start_time)}",
+        f"• *Records:* {game.away_team} ({away_record}) vs {game.home_team} ({home_record})",
     ]
-
-    if game.broadcasts:
-        lines.append(f"• *Watch:* {', '.join(game.broadcasts)}")
-
-    lines.append(f"• *Records:* {game.away_team} ({away_record}) vs {game.home_team} ({home_record})")
 
     if odds:
         away_line = f"{game.away_team} {odds.away_spread}"
@@ -53,7 +51,7 @@ def build_pregame_blocks(
         lines.append(f"• *Spread:* {away_line} | {home_line} | O/U {odds.total}  _{odds.bookmaker}_")
 
     if game.series_context:
-        lines.append(f"• *Playoff context:* {game.series_context}")
+        lines.append(f"• *Series:* {game.series_context}")
 
     if weather:
         lines.append(
@@ -61,14 +59,11 @@ def build_pregame_blocks(
             f"{weather.wind_mph} mph wind, {weather.precip_pct}% precip"
         )
 
-    blocks.append(_section("\n".join(lines)))
+    blocks = [_section("\n".join(lines))]
 
     if blurb:
         blocks.append(_divider())
         blocks.append(_section(blurb))
-
-    blocks.append(_divider())
-    blocks.append(_section("🧵 Discuss the game and provide hot takes in the thread!"))
 
     return blocks
 

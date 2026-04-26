@@ -334,17 +334,22 @@ def run_test(
         except Exception as exc:
             log.warning("Blurb skipped: %s", exc)
 
-        blocks = formatter.build_pregame_blocks(
-            game=game,
-            home_record=home_record,
-            away_record=away_record,
-            odds=odds_result,
-            weather=weather_result,
-            blurb=blurb_text,
-        )
+        blocks = formatter.build_pregame_blocks(game=game)
         text = f"Game Day: {game.away_team} @ {game.home_team}"
         thread_ts = slack_client.post_message(blocks=blocks, text=text)
         log.info("Pre-game posted (ts=%s)", thread_ts)
+
+        if thread_ts:
+            thread_blocks = formatter.build_pregame_thread_blocks(
+                game=game,
+                home_record=home_record,
+                away_record=away_record,
+                odds=odds_result,
+                weather=weather_result,
+                blurb=blurb_text,
+            )
+            thread_text = f"Pre-game details: {game.away_team} @ {game.home_team}"
+            slack_client.post_reply(blocks=thread_blocks, text=thread_text, thread_ts=thread_ts)
 
         if ("mid" in stages or "final" in stages) and thread_ts:
             log.info("Waiting %ds before mid-game post…", delay)
