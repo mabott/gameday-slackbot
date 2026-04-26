@@ -63,6 +63,8 @@ def schedule_day(scheduler: BackgroundScheduler, date_str: str, team_id_map: dic
                 away_team=game.away_team,
                 start_time_iso=game.start_time.isoformat(),
                 date=date_str,
+                home_record=game.home_record,
+                away_record=game.away_record,
             )
 
             _schedule_game_jobs(scheduler, game, date_str)
@@ -129,8 +131,8 @@ def _run_pregame(game_id: str, sport: str, league: str):
         log.warning("Could not fetch game summary for %s: %s", game_id, exc)
         summary = None
 
-    home_record = summary.home_record if summary else ""
-    away_record = summary.away_record if summary else ""
+    home_record = row.get("home_record") or (summary.home_record if summary else "")
+    away_record = row.get("away_record") or (summary.away_record if summary else "")
     injuries = summary.injuries if summary else []
     series_ctx = summary.series_context if summary else None
 

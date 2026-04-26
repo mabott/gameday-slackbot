@@ -299,8 +299,8 @@ def run_test(
             except Exception:
                 pass
 
-        home_record = summary.home_record if summary else "N/A"
-        away_record = summary.away_record if summary else "N/A"
+        home_record = game.home_record or (summary.home_record if summary else "")
+        away_record = game.away_record or (summary.away_record if summary else "")
         injuries = summary.injuries if summary else []
         series_ctx = summary.series_context if summary else game.series_context
 

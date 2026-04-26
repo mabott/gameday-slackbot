@@ -33,6 +33,8 @@ class Game:
     broadcasts: list = field(default_factory=list)
     series_context: Optional[str] = None
     venue: str = ""
+    home_record: str = ""
+    away_record: str = ""
 
 
 @dataclass
@@ -227,6 +229,11 @@ def get_games_for_date(
 
         venue = event.get("competitions", [{}])[0].get("venue", {}).get("fullName", "")
 
+        def _record(competitor):
+            recs = competitor.get("records", [])
+            overall = next((r for r in recs if r.get("type") == "total"), recs[0] if recs else {})
+            return overall.get("summary", "")
+
         games.append(Game(
             game_id=event["id"],
             sport=sport,
@@ -242,6 +249,8 @@ def get_games_for_date(
             broadcasts=[b for b in broadcasts if b],
             series_context=series_ctx,
             venue=venue,
+            home_record=_record(home),
+            away_record=_record(away),
         ))
 
     return games
