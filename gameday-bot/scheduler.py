@@ -17,6 +17,7 @@ from config import (
     EXPECTED_DURATIONS,
     ODDS_SPORT_KEYS,
     STADIUM_COORDS,
+    BLURB_ENABLED,
 )
 
 log = logging.getLogger(__name__)
@@ -168,23 +169,24 @@ def _run_pregame(game_id: str, sport: str, league: str):
         log.warning("Weather fetch failed: %s", exc)
 
     # Blurb
-    injury_summary = (
-        ", ".join(f"{i['name']} ({i['team']}) — {i['status']}" for i in injuries[:3])
-        if injuries else "None reported"
-    )
     blurb_text = ""
-    try:
-        blurb_text = blurb.generate_blurb({
-            "away_team": row["away_team"],
-            "home_team": row["home_team"],
-            "sport": sport,
-            "away_record": away_record,
-            "home_record": home_record,
-            "series_context": series_ctx or "Regular season",
-            "injuries": injury_summary,
-        })
-    except Exception as exc:
-        log.warning("Blurb generation failed: %s", exc)
+    if BLURB_ENABLED:
+        injury_summary = (
+            ", ".join(f"{i['name']} ({i['team']}) — {i['status']}" for i in injuries[:3])
+            if injuries else "None reported"
+        )
+        try:
+            blurb_text = blurb.generate_blurb({
+                "away_team": row["away_team"],
+                "home_team": row["home_team"],
+                "sport": sport,
+                "away_record": away_record,
+                "home_record": home_record,
+                "series_context": series_ctx or "Regular season",
+                "injuries": injury_summary,
+            })
+        except Exception as exc:
+            log.warning("Blurb generation failed: %s", exc)
 
     blocks = formatter.build_pregame_blocks(
         game=game,
