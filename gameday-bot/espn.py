@@ -32,6 +32,9 @@ class Game:
     away_score: int = 0
     broadcasts: list = field(default_factory=list)
     series_context: Optional[str] = None
+    venue: str = ""
+    home_record: str = ""
+    away_record: str = ""
 
 
 @dataclass
@@ -49,6 +52,7 @@ class GameSummary:
     goalie_saves: dict = field(default_factory=dict)
     series_context: Optional[str] = None
     injuries: list = field(default_factory=list)
+    plays: list = field(default_factory=list)
 
 
 @dataclass
@@ -224,6 +228,13 @@ def get_games_for_date(
             if summary:
                 series_ctx = summary
 
+        venue = event.get("competitions", [{}])[0].get("venue", {}).get("fullName", "")
+
+        def _record(competitor):
+            recs = competitor.get("records", [])
+            overall = next((r for r in recs if r.get("type") == "total"), recs[0] if recs else {})
+            return overall.get("summary", "")
+
         games.append(Game(
             game_id=event["id"],
             sport=sport,
@@ -238,6 +249,9 @@ def get_games_for_date(
             away_score=int(away.get("score", 0) or 0),
             broadcasts=[b for b in broadcasts if b],
             series_context=series_ctx,
+            venue=venue,
+            home_record=_record(home),
+            away_record=_record(away),
         ))
 
     return games
@@ -254,14 +268,18 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         return None
 
     boxscore = data.get("boxscore", {})
-    competitors = boxscore.get("teams", [])
-    if not competitors:
-        competitors = data.get("header", {}).get("competitions", [{}])[0].get("competitors", [])
+    header_comps = data.get("header", {}).get("competitions", [{}])[0].get("competitors", [])
+
+    # Scores only exist in header competitors; stats/records live in boxscore teams
+    competitors = boxscore.get("teams", []) or header_comps
 
     home = next((c for c in competitors if c.get("homeAway") == "home"), None)
     away = next((c for c in competitors if c.get("homeAway") == "away"), None)
     if not home or not away:
         return None
+
+    h_score = next((c for c in header_comps if c.get("homeAway") == "home"), {})
+    a_score = next((c for c in header_comps if c.get("homeAway") == "away"), {})
 
     def team_name(c):
         return c.get("team", {}).get("displayName", "")
@@ -331,8 +349,8 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         status="post" if is_final else "in",
         home_team=team_name(home),
         away_team=team_name(away),
-        home_score=score(home),
-        away_score=score(away),
+        home_score=score(h_score),
+        away_score=score(a_score),
         home_record=record(home),
         away_record=record(away),
         period=period_text,
@@ -340,7 +358,25 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         goalie_saves=goalie_saves,
         series_context=series_ctx,
         injuries=injuries,
+        plays=data.get("plays", []),
     )
+
+
+def baseball_stretch_scores(plays: list) -> Optional[tuple]:
+    """Return (away_score, home_score) at the 7th inning stretch, or None."""
+    for play in reversed(plays):
+        period = play.get("period", {})
+        if period.get("number") == 7 and period.get("type") == "Mid":
+            return play.get("awayScore", 0), play.get("homeScore", 0)
+    return None
+
+
+def basketball_halftime_scores(plays: list) -> Optional[tuple]:
+    """Return (away_score, home_score) at the end of the 2nd quarter, or None."""
+    for play in reversed(plays):
+        if play.get("period", {}).get("number") == 2:
+            return play.get("awayScore", 0), play.get("homeScore", 0)
+    return None
 
 
 def get_team_record(sport: str, league: str, team_id: str) -> Optional[Record]:

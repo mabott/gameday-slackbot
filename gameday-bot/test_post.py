@@ -299,8 +299,8 @@ def run_test(
             except Exception:
                 pass
 
-        home_record = summary.home_record if summary else "N/A"
-        away_record = summary.away_record if summary else "N/A"
+        home_record = game.home_record or (summary.home_record if summary else "")
+        away_record = game.away_record or (summary.away_record if summary else "")
         injuries = summary.injuries if summary else []
         series_ctx = summary.series_context if summary else game.series_context
 
@@ -334,17 +334,22 @@ def run_test(
         except Exception as exc:
             log.warning("Blurb skipped: %s", exc)
 
-        blocks = formatter.build_pregame_blocks(
-            game=game,
-            home_record=home_record,
-            away_record=away_record,
-            odds=odds_result,
-            weather=weather_result,
-            blurb=blurb_text,
-        )
+        blocks = formatter.build_pregame_blocks(game=game)
         text = f"Game Day: {game.away_team} @ {game.home_team}"
         thread_ts = slack_client.post_message(blocks=blocks, text=text)
         log.info("Pre-game posted (ts=%s)", thread_ts)
+
+        if thread_ts:
+            thread_blocks = formatter.build_pregame_thread_blocks(
+                game=game,
+                home_record=home_record,
+                away_record=away_record,
+                odds=odds_result,
+                weather=weather_result,
+                blurb=blurb_text,
+            )
+            thread_text = f"Pre-game details: {game.away_team} @ {game.home_team}"
+            slack_client.post_reply(blocks=thread_blocks, text=thread_text, thread_ts=thread_ts)
 
         if ("mid" in stages or "final" in stages) and thread_ts:
             log.info("Waiting %ds before mid-game post…", delay)
@@ -355,7 +360,18 @@ def run_test(
         log.info("Firing mid-game post")
 
         if historical_summary:
-            mid_summary = historical_summary
+            from dataclasses import replace
+            if game.sport == "baseball":
+                scores = espn.baseball_stretch_scores(historical_summary.plays)
+            elif game.sport == "basketball":
+                scores = espn.basketball_halftime_scores(historical_summary.plays)
+            else:
+                scores = None
+            mid_summary = replace(
+                historical_summary,
+                series_context=game.series_context,
+                **({"away_score": scores[0], "home_score": scores[1], "status": "in"} if scores else {}),
+            )
         else:
             mid_summary = None
             try:
@@ -382,7 +398,8 @@ def run_test(
         log.info("Firing final post")
 
         if historical_summary and historical_summary.status == "post":
-            final_summary = historical_summary
+            from dataclasses import replace
+            final_summary = replace(historical_summary, series_context=game.series_context)
         else:
             final_summary = None
             try:

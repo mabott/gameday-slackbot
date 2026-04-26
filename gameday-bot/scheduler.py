@@ -63,6 +63,8 @@ def schedule_day(scheduler: BackgroundScheduler, date_str: str, team_id_map: dic
                 away_team=game.away_team,
                 start_time_iso=game.start_time.isoformat(),
                 date=date_str,
+                home_record=game.home_record,
+                away_record=game.away_record,
             )
 
             _schedule_game_jobs(scheduler, game, date_str)
@@ -129,8 +131,8 @@ def _run_pregame(game_id: str, sport: str, league: str):
         log.warning("Could not fetch game summary for %s: %s", game_id, exc)
         summary = None
 
-    home_record = summary.home_record if summary else ""
-    away_record = summary.away_record if summary else ""
+    home_record = row.get("home_record") or (summary.home_record if summary else "")
+    away_record = row.get("away_record") or (summary.away_record if summary else "")
     injuries = summary.injuries if summary else []
     series_ctx = summary.series_context if summary else None
 
@@ -184,14 +186,7 @@ def _run_pregame(game_id: str, sport: str, league: str):
     except Exception as exc:
         log.warning("Blurb generation failed: %s", exc)
 
-    blocks = formatter.build_pregame_blocks(
-        game=game,
-        home_record=home_record,
-        away_record=away_record,
-        odds=odds_result,
-        weather=weather_result,
-        blurb=blurb_text,
-    )
+    blocks = formatter.build_pregame_blocks(game=game)
     text = f"Game Day: {row['away_team']} @ {row['home_team']}"
     ts = slack_client.post_message(blocks=blocks, text=text)
 
@@ -199,6 +194,17 @@ def _run_pregame(game_id: str, sport: str, league: str):
         db.save_slack_ts(game_id, ts)
         db.mark_posted(game_id, "pregame")
         log.info("Pre-game posted for %s (ts=%s)", game_id, ts)
+
+        thread_blocks = formatter.build_pregame_thread_blocks(
+            game=game,
+            home_record=home_record,
+            away_record=away_record,
+            odds=odds_result,
+            weather=weather_result,
+            blurb=blurb_text,
+        )
+        thread_text = f"Pre-game details: {row['away_team']} @ {row['home_team']}"
+        slack_client.post_reply(blocks=thread_blocks, text=thread_text, thread_ts=ts)
     else:
         log.error("Pre-game post failed for %s", game_id)
 
