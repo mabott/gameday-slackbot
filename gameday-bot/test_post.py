@@ -360,7 +360,6 @@ def run_test(
         log.info("Firing mid-game post")
 
         if historical_summary:
-            mid_summary = historical_summary
             from dataclasses import replace
             if game.sport == "baseball":
                 scores = espn.baseball_stretch_scores(historical_summary.plays)
@@ -368,10 +367,11 @@ def run_test(
                 scores = espn.basketball_halftime_scores(historical_summary.plays)
             else:
                 scores = None
-            if scores:
-                mid_summary = replace(historical_summary,
-                                      away_score=scores[0], home_score=scores[1],
-                                      status="in")
+            mid_summary = replace(
+                historical_summary,
+                series_context=game.series_context,
+                **({"away_score": scores[0], "home_score": scores[1], "status": "in"} if scores else {}),
+            )
         else:
             mid_summary = None
             try:
@@ -398,7 +398,8 @@ def run_test(
         log.info("Firing final post")
 
         if historical_summary and historical_summary.status == "post":
-            final_summary = historical_summary
+            from dataclasses import replace
+            final_summary = replace(historical_summary, series_context=game.series_context)
         else:
             final_summary = None
             try:
