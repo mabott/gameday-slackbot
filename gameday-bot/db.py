@@ -19,9 +19,16 @@ def init_db():
                 pregame_posted INTEGER DEFAULT 0,
                 midgame_posted INTEGER DEFAULT 0,
                 final_posted INTEGER DEFAULT 0,
-                date TEXT
+                date TEXT,
+                home_record TEXT DEFAULT '',
+                away_record TEXT DEFAULT ''
             )
         """)
+        for col in ("home_record", "away_record"):
+            try:
+                conn.execute(f"ALTER TABLE games ADD COLUMN {col} TEXT DEFAULT ''")
+            except Exception:
+                pass  # column already exists
         conn.commit()
     log.info("DB initialized at %s", DB_PATH)
 
@@ -36,13 +43,18 @@ def _conn():
         conn.close()
 
 
-def upsert_game(game_id, sport, home_team, away_team, start_time_iso, date):
+def upsert_game(game_id, sport, home_team, away_team, start_time_iso, date,
+                home_record="", away_record=""):
     with _conn() as conn:
         conn.execute("""
-            INSERT INTO games (game_id, sport, home_team, away_team, start_time, date)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(game_id) DO NOTHING
-        """, (game_id, sport, home_team, away_team, start_time_iso, date))
+            INSERT INTO games (game_id, sport, home_team, away_team, start_time, date,
+                               home_record, away_record)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(game_id) DO UPDATE SET
+                home_record = excluded.home_record,
+                away_record = excluded.away_record
+        """, (game_id, sport, home_team, away_team, start_time_iso, date,
+              home_record, away_record))
         conn.commit()
 
 

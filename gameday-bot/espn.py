@@ -32,6 +32,9 @@ class Game:
     away_score: int = 0
     broadcasts: list = field(default_factory=list)
     series_context: Optional[str] = None
+    venue: str = ""
+    home_record: str = ""
+    away_record: str = ""
 
 
 @dataclass
@@ -49,6 +52,7 @@ class GameSummary:
     goalie_saves: dict = field(default_factory=dict)
     series_context: Optional[str] = None
     injuries: list = field(default_factory=list)
+    plays: list = field(default_factory=list)
 
 
 @dataclass
@@ -167,15 +171,24 @@ def refresh_team_ids():
 # Schedule / scoreboard
 # ---------------------------------------------------------------------------
 
-def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -> list[Game]:
+def get_games_for_date(
+    sport: str,
+    league: str,
+    date: str,
+    team_ids: set[str],
+    include_final: bool = False,
+) -> list[Game]:
     """
     date: YYYYMMDD string
     team_ids: set of ESPN team IDs to filter for
+    include_final: if True, also return completed games (status="post")
     """
     url = f"{ESPN_BASE}/{sport}/{league}/scoreboard"
     data = _get(url, params={"dates": date})
     if not data:
         return []
+
+    _COMPLETE = ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
 
     games = []
     for event in data.get("events", []):
@@ -195,7 +208,10 @@ def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -
             continue
 
         status_type = event.get("status", {}).get("type", {}).get("name", "STATUS_SCHEDULED")
-        if status_type in ("STATUS_FINAL", "STATUS_POSTPONED", "STATUS_CANCELED"):
+        if status_type in ("STATUS_POSTPONED", "STATUS_CANCELED"):
+            continue
+        is_complete = status_type in _COMPLETE
+        if is_complete and not include_final:
             continue
 
         broadcasts = [
@@ -205,10 +221,19 @@ def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -
 
         series_ctx = None
         series = event.get("competitions", [{}])[0].get("series")
-        if series:
+        if isinstance(series, list):
+            series = series[0] if series else None
+        if isinstance(series, dict):
             summary = series.get("summary", "")
             if summary:
                 series_ctx = summary
+
+        venue = event.get("competitions", [{}])[0].get("venue", {}).get("fullName", "")
+
+        def _record(competitor):
+            recs = competitor.get("records", [])
+            overall = next((r for r in recs if r.get("type") == "total"), recs[0] if recs else {})
+            return overall.get("summary", "")
 
         games.append(Game(
             game_id=event["id"],
@@ -219,11 +244,14 @@ def get_games_for_date(sport: str, league: str, date: str, team_ids: set[str]) -
             home_team_id=home["team"]["id"],
             away_team_id=away["team"]["id"],
             start_time=start_dt.astimezone(timezone.utc).replace(tzinfo=timezone.utc),
-            status="pre",
+            status="post" if is_complete else "pre",
             home_score=int(home.get("score", 0) or 0),
             away_score=int(away.get("score", 0) or 0),
             broadcasts=[b for b in broadcasts if b],
             series_context=series_ctx,
+            venue=venue,
+            home_record=_record(home),
+            away_record=_record(away),
         ))
 
     return games
@@ -240,14 +268,18 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         return None
 
     boxscore = data.get("boxscore", {})
-    competitors = boxscore.get("teams", [])
-    if not competitors:
-        competitors = data.get("header", {}).get("competitions", [{}])[0].get("competitors", [])
+    header_comps = data.get("header", {}).get("competitions", [{}])[0].get("competitors", [])
+
+    # Scores only exist in header competitors; stats/records live in boxscore teams
+    competitors = boxscore.get("teams", []) or header_comps
 
     home = next((c for c in competitors if c.get("homeAway") == "home"), None)
     away = next((c for c in competitors if c.get("homeAway") == "away"), None)
     if not home or not away:
         return None
+
+    h_score = next((c for c in header_comps if c.get("homeAway") == "home"), {})
+    a_score = next((c for c in header_comps if c.get("homeAway") == "away"), {})
 
     def team_name(c):
         return c.get("team", {}).get("displayName", "")
@@ -305,7 +337,9 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
 
     series_ctx = None
     series = data.get("header", {}).get("competitions", [{}])[0].get("series")
-    if series:
+    if isinstance(series, list):
+        series = series[0] if series else None
+    if isinstance(series, dict):
         series_ctx = series.get("summary", "")
 
     is_final = status_name in ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
@@ -315,8 +349,8 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         status="post" if is_final else "in",
         home_team=team_name(home),
         away_team=team_name(away),
-        home_score=score(home),
-        away_score=score(away),
+        home_score=score(h_score),
+        away_score=score(a_score),
         home_record=record(home),
         away_record=record(away),
         period=period_text,
@@ -324,7 +358,25 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         goalie_saves=goalie_saves,
         series_context=series_ctx,
         injuries=injuries,
+        plays=data.get("plays", []),
     )
+
+
+def baseball_stretch_scores(plays: list) -> Optional[tuple]:
+    """Return (away_score, home_score) at the 7th inning stretch, or None."""
+    for play in reversed(plays):
+        period = play.get("period", {})
+        if period.get("number") == 7 and period.get("type") == "Mid":
+            return play.get("awayScore", 0), play.get("homeScore", 0)
+    return None
+
+
+def basketball_halftime_scores(plays: list) -> Optional[tuple]:
+    """Return (away_score, home_score) at the end of the 2nd quarter, or None."""
+    for play in reversed(plays):
+        if play.get("period", {}).get("number") == 2:
+            return play.get("awayScore", 0), play.get("homeScore", 0)
+    return None
 
 
 def get_team_record(sport: str, league: str, team_id: str) -> Optional[Record]:
