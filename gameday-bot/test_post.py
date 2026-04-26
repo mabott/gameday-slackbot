@@ -361,6 +361,17 @@ def run_test(
 
         if historical_summary:
             mid_summary = historical_summary
+            from dataclasses import replace
+            if game.sport == "baseball":
+                scores = espn.baseball_stretch_scores(historical_summary.plays)
+            elif game.sport == "basketball":
+                scores = espn.basketball_halftime_scores(historical_summary.plays)
+            else:
+                scores = None
+            if scores:
+                mid_summary = replace(historical_summary,
+                                      away_score=scores[0], home_score=scores[1],
+                                      status="in")
         else:
             mid_summary = None
             try:

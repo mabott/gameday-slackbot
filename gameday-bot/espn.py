@@ -52,6 +52,7 @@ class GameSummary:
     goalie_saves: dict = field(default_factory=dict)
     series_context: Optional[str] = None
     injuries: list = field(default_factory=list)
+    plays: list = field(default_factory=list)
 
 
 @dataclass
@@ -357,7 +358,25 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         goalie_saves=goalie_saves,
         series_context=series_ctx,
         injuries=injuries,
+        plays=data.get("plays", []),
     )
+
+
+def baseball_stretch_scores(plays: list) -> Optional[tuple]:
+    """Return (away_score, home_score) at the 7th inning stretch, or None."""
+    for play in reversed(plays):
+        period = play.get("period", {})
+        if period.get("number") == 7 and period.get("type") == "Mid":
+            return play.get("awayScore", 0), play.get("homeScore", 0)
+    return None
+
+
+def basketball_halftime_scores(plays: list) -> Optional[tuple]:
+    """Return (away_score, home_score) at the end of the 2nd quarter, or None."""
+    for play in reversed(plays):
+        if play.get("period", {}).get("number") == 2:
+            return play.get("awayScore", 0), play.get("homeScore", 0)
+    return None
 
 
 def get_team_record(sport: str, league: str, team_id: str) -> Optional[Record]:
