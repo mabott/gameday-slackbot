@@ -267,14 +267,18 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         return None
 
     boxscore = data.get("boxscore", {})
-    competitors = boxscore.get("teams", [])
-    if not competitors:
-        competitors = data.get("header", {}).get("competitions", [{}])[0].get("competitors", [])
+    header_comps = data.get("header", {}).get("competitions", [{}])[0].get("competitors", [])
+
+    # Scores only exist in header competitors; stats/records live in boxscore teams
+    competitors = boxscore.get("teams", []) or header_comps
 
     home = next((c for c in competitors if c.get("homeAway") == "home"), None)
     away = next((c for c in competitors if c.get("homeAway") == "away"), None)
     if not home or not away:
         return None
+
+    h_score = next((c for c in header_comps if c.get("homeAway") == "home"), {})
+    a_score = next((c for c in header_comps if c.get("homeAway") == "away"), {})
 
     def team_name(c):
         return c.get("team", {}).get("displayName", "")
@@ -344,8 +348,8 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         status="post" if is_final else "in",
         home_team=team_name(home),
         away_team=team_name(away),
-        home_score=score(home),
-        away_score=score(away),
+        home_score=score(h_score),
+        away_score=score(a_score),
         home_record=record(home),
         away_record=record(away),
         period=period_text,
