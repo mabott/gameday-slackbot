@@ -223,7 +223,7 @@ def get_games_for_date(
         series = event.get("competitions", [{}])[0].get("series")
         if isinstance(series, list):
             series = series[0] if series else None
-        series_ctx = _series_context(series)
+        series_ctx = _series_context(series, team_hints=competitors)
 
         venue = event.get("competitions", [{}])[0].get("venue", {}).get("fullName", "")
 
@@ -336,7 +336,7 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     series = data.get("header", {}).get("competitions", [{}])[0].get("series")
     if isinstance(series, list):
         series = series[0] if series else None
-    series_ctx = _series_context(series)
+    series_ctx = _series_context(series, team_hints=header_comps)
 
     is_final = status_name in ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
 
@@ -375,39 +375,53 @@ def basketball_halftime_scores(plays: list) -> Optional[tuple]:
     return None
 
 
-def _team_name_from_competitor(c: dict) -> str:
-    """Extract the best available team name from a series competitor entry."""
-    team = c.get("team", {})
-    return (
-        team.get("shortDisplayName") or team.get("abbreviation") or
-        team.get("displayName") or team.get("name") or
-        c.get("shortDisplayName") or c.get("abbreviation") or
-        c.get("displayName") or c.get("name") or ""
-    )
-
-
-def _series_context(series: dict) -> Optional[str]:
-    """Build a human-readable series context from the ESPN series object."""
+def _series_context(series: dict, team_hints: list = None) -> Optional[str]:
+    """
+    Build a human-readable series context from the ESPN series object.
+    team_hints: list of game competitor dicts (from scoreboard or header) used to
+    resolve team names by ID when the series competitors carry no name fields.
+    """
     if not series or not isinstance(series, dict):
         return None
-    log.debug("ESPN series object: %s", series)
+    log.info("ESPN series object: %s", series)
+
+    # Build ID → short name map from the game's own competitor data
+    hint_map: dict[str, str] = {}
+    for c in (team_hints or []):
+        tid = c.get("team", {}).get("id") or c.get("id")
+        tname = (c.get("team", {}).get("shortDisplayName") or
+                 c.get("team", {}).get("abbreviation") or
+                 c.get("team", {}).get("displayName") or "")
+        if tid and tname:
+            hint_map[tid] = tname
+
+    def _name(c: dict) -> str:
+        team = c.get("team", {})
+        name = (team.get("shortDisplayName") or team.get("abbreviation") or
+                team.get("displayName") or team.get("name") or
+                c.get("shortDisplayName") or c.get("abbreviation") or
+                c.get("displayName") or c.get("name") or "")
+        if not name:
+            cid = c.get("id") or team.get("id")
+            name = hint_map.get(cid, "")
+        return name
+
     competitors = series.get("competitors", [])
     if len(competitors) == 2:
         c0, c1 = competitors[0], competitors[1]
         w0 = int(c0.get("wins", 0))
         w1 = int(c1.get("wins", 0))
-        name0 = _team_name_from_competitor(c0)
-        name1 = _team_name_from_competitor(c1)
+        name0, name1 = _name(c0), _name(c1)
         if not name0 and not name1:
-            log.warning("Series competitors have no team names; falling back to summary. Keys: %s", list(c0.keys()))
+            log.warning("Series: could not resolve team names (keys: %s); falling back to ESPN summary", list(c0.keys()))
             return series.get("summary") or None
         if w0 == w1:
             return f"Series tied {w0}-{w1}"
         leader, lw, tw = (name0, w0, w1) if w0 > w1 else (name1, w1, w0)
-        # Use "win" only when a team has enough wins to clinch (best-of-7 = 4)
         verb = "win" if max(w0, w1) >= 4 else "lead"
         return f"{leader} {verb} series {lw}-{tw}"
-    log.warning("Series object has unexpected competitor count (%d); falling back to summary", len(competitors))
+
+    log.warning("Series: unexpected competitor count (%d); falling back to ESPN summary", len(competitors))
     return series.get("summary") or None
 
 
