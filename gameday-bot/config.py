@@ -15,6 +15,7 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 TZ = os.environ.get("TZ", "America/Los_Angeles")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+BLURB_ENABLED = os.environ.get("BLURB_ENABLED", "false").lower() == "true"
 
 DB_PATH = os.environ.get("DB_PATH", "gameday.db")
 ESPN_ID_CACHE_PATH = os.environ.get("ESPN_ID_CACHE_PATH", "espn_ids.json")

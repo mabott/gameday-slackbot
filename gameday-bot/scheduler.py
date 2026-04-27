@@ -17,6 +17,7 @@ from config import (
     EXPECTED_DURATIONS,
     ODDS_SPORT_KEYS,
     STADIUM_COORDS,
+    BLURB_ENABLED,
 )
 
 log = logging.getLogger(__name__)
@@ -78,6 +79,11 @@ def _schedule_game_jobs(scheduler: BackgroundScheduler, game, date_str: str):
     midgame_time = game.start_time + timedelta(hours=HALFTIME_OFFSETS.get(sport, 2.0))
     poller_time = game.start_time + timedelta(hours=EXPECTED_DURATIONS.get(sport, 3.0))
 
+    # Detect missed stages (window passed but not yet posted)
+    pregame_missed = not db.is_posted(game.game_id, "pregame") and pregame_time <= now
+    midgame_missed = not db.is_posted(game.game_id, "midgame") and midgame_time <= now
+    poller_missed = not db.is_posted(game.game_id, "final") and poller_time <= now
+
     if not db.is_posted(game.game_id, "pregame") and pregame_time > now:
         scheduler.add_job(
             _run_pregame,
@@ -112,6 +118,22 @@ def _schedule_game_jobs(scheduler: BackgroundScheduler, game, date_str: str):
             replace_existing=True,
         )
         log.info("Scheduled final poller for %s at %s UTC", game.game_id, poller_time)
+
+    # Catch up any stages whose windows have already passed
+    if pregame_missed or midgame_missed or poller_missed:
+        log.warning(
+            "Catch-up needed for %s: pregame=%s midgame=%s final=%s",
+            game.game_id, pregame_missed, midgame_missed, poller_missed,
+        )
+        catchup_time = datetime.now(timezone.utc) + timedelta(seconds=2)
+        scheduler.add_job(
+            _run_catchup,
+            "date",
+            run_date=catchup_time,
+            args=[game.game_id, sport, game.league, pregame_missed, midgame_missed, poller_missed],
+            id=f"catchup_{game.game_id}",
+            replace_existing=True,
+        )
 
 
 def _run_pregame(game_id: str, sport: str, league: str):
@@ -168,23 +190,24 @@ def _run_pregame(game_id: str, sport: str, league: str):
         log.warning("Weather fetch failed: %s", exc)
 
     # Blurb
-    injury_summary = (
-        ", ".join(f"{i['name']} ({i['team']}) — {i['status']}" for i in injuries[:3])
-        if injuries else "None reported"
-    )
     blurb_text = ""
-    try:
-        blurb_text = blurb.generate_blurb({
-            "away_team": row["away_team"],
-            "home_team": row["home_team"],
-            "sport": sport,
-            "away_record": away_record,
-            "home_record": home_record,
-            "series_context": series_ctx or "Regular season",
-            "injuries": injury_summary,
-        })
-    except Exception as exc:
-        log.warning("Blurb generation failed: %s", exc)
+    if BLURB_ENABLED:
+        injury_summary = (
+            ", ".join(f"{i['name']} ({i['team']}) — {i['status']}" for i in injuries[:3])
+            if injuries else "None reported"
+        )
+        try:
+            blurb_text = blurb.generate_blurb({
+                "away_team": row["away_team"],
+                "home_team": row["home_team"],
+                "sport": sport,
+                "away_record": away_record,
+                "home_record": home_record,
+                "series_context": series_ctx or "Regular season",
+                "injuries": injury_summary,
+            })
+        except Exception as exc:
+            log.warning("Blurb generation failed: %s", exc)
 
     blocks = formatter.build_pregame_blocks(game=game)
     text = f"Game Day: {row['away_team']} @ {row['home_team']}"
@@ -245,3 +268,14 @@ def _run_midgame(game_id: str, sport: str, league: str):
 
 def _run_poller(game_id: str, sport: str, league: str):
     poller.poll_for_final(game_id, sport, league)
+
+
+def _run_catchup(game_id: str, sport: str, league: str, do_pregame: bool, do_midgame: bool, do_poll: bool):
+    """Run missed stages in order so slack_ts is always set before threaded posts."""
+    log.info("Catch-up starting for %s (pregame=%s midgame=%s poll=%s)", game_id, do_pregame, do_midgame, do_poll)
+    if do_pregame:
+        _run_pregame(game_id, sport, league)
+    if do_midgame:
+        _run_midgame(game_id, sport, league)
+    if do_poll:
+        poller.poll_for_final(game_id, sport, league)

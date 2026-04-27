@@ -222,11 +222,8 @@ def get_games_for_date(
         series_ctx = None
         series = event.get("competitions", [{}])[0].get("series")
         if isinstance(series, list):
-            series = series[0] if series else None
-        if isinstance(series, dict):
-            summary = series.get("summary", "")
-            if summary:
-                series_ctx = summary
+            series = next((s for s in series if s.get("type") == "playoff"), series[0] if series else None)
+        series_ctx = _series_context(series, team_hints=competitors)
 
         venue = event.get("competitions", [{}])[0].get("venue", {}).get("fullName", "")
 
@@ -338,9 +335,8 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     series_ctx = None
     series = data.get("header", {}).get("competitions", [{}])[0].get("series")
     if isinstance(series, list):
-        series = series[0] if series else None
-    if isinstance(series, dict):
-        series_ctx = series.get("summary", "")
+        series = next((s for s in series if s.get("type") == "playoff"), series[0] if series else None)
+    series_ctx = _series_context(series, team_hints=header_comps)
 
     is_final = status_name in ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
 
@@ -377,6 +373,56 @@ def basketball_halftime_scores(plays: list) -> Optional[tuple]:
         if play.get("period", {}).get("number") == 2:
             return play.get("awayScore", 0), play.get("homeScore", 0)
     return None
+
+
+def _series_context(series: dict, team_hints: list = None) -> Optional[str]:
+    """
+    Build a human-readable series context from the ESPN series object.
+    team_hints: list of game competitor dicts (from scoreboard or header) used to
+    resolve team names by ID when the series competitors carry no name fields.
+    """
+    if not series or not isinstance(series, dict):
+        return None
+    log.info("ESPN series object: %s", series)
+
+    # Build ID → short name map from the game's own competitor data
+    hint_map: dict[str, str] = {}
+    for c in (team_hints or []):
+        tid = c.get("team", {}).get("id") or c.get("id")
+        tname = (c.get("team", {}).get("shortDisplayName") or
+                 c.get("team", {}).get("abbreviation") or
+                 c.get("team", {}).get("displayName") or "")
+        if tid and tname:
+            hint_map[tid] = tname
+
+    def _name(c: dict) -> str:
+        team = c.get("team", {})
+        name = (team.get("shortDisplayName") or team.get("abbreviation") or
+                team.get("displayName") or team.get("name") or
+                c.get("shortDisplayName") or c.get("abbreviation") or
+                c.get("displayName") or c.get("name") or "")
+        if not name:
+            cid = c.get("id") or team.get("id")
+            name = hint_map.get(cid, "")
+        return name
+
+    competitors = series.get("competitors", [])
+    if len(competitors) == 2:
+        c0, c1 = competitors[0], competitors[1]
+        w0 = int(c0.get("wins", 0))
+        w1 = int(c1.get("wins", 0))
+        name0, name1 = _name(c0), _name(c1)
+        if not name0 and not name1:
+            log.warning("Series: could not resolve team names (keys: %s); falling back to ESPN summary", list(c0.keys()))
+            return series.get("summary") or None
+        if w0 == w1:
+            return f"Series tied {w0}-{w1}"
+        leader, lw, tw = (name0, w0, w1) if w0 > w1 else (name1, w1, w0)
+        verb = "win" if max(w0, w1) >= 4 else "lead"
+        return f"{leader} {verb} series {lw}-{tw}"
+
+    log.warning("Series: unexpected competitor count (%d); falling back to ESPN summary", len(competitors))
+    return series.get("summary") or None
 
 
 def get_team_record(sport: str, league: str, team_id: str) -> Optional[Record]:

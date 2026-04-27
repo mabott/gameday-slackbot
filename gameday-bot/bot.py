@@ -3,14 +3,16 @@ import logging
 import signal
 import sys
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.executors.pool import ThreadPoolExecutor
 
 import db
 import espn
 import scheduler as sched
-from config import LOG_LEVEL, DB_PATH, DRY_RUN
+from config import LOG_LEVEL, DB_PATH, DRY_RUN, TZ
 
 _apscheduler = None
 _team_id_map = {}
@@ -24,11 +26,11 @@ log = logging.getLogger("bot")
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(ZoneInfo(TZ)).strftime("%Y-%m-%d")
 
 
 def _yesterday() -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    return (datetime.now(ZoneInfo(TZ)) - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def daily_refresh():
@@ -54,7 +56,19 @@ def main():
     jobstores = {
         "default": SQLAlchemyJobStore(url=f"sqlite:///{DB_PATH}"),
     }
-    _apscheduler = BackgroundScheduler(jobstores=jobstores, timezone="UTC")
+    executors = {
+        "default": ThreadPoolExecutor(20),
+    }
+    job_defaults = {
+        "misfire_grace_time": 3600,  # don't drop jobs that fire up to 1hr late
+        "coalesce": True,
+    }
+    _apscheduler = BackgroundScheduler(
+        jobstores=jobstores,
+        executors=executors,
+        job_defaults=job_defaults,
+        timezone="UTC",
+    )
     _apscheduler.start()
     log.info("Scheduler started")
 

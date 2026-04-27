@@ -28,7 +28,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("test_post")
 
-from config import DRY_RUN, TEAM_CONFIG
+from config import DRY_RUN, TEAM_CONFIG, BLURB_ENABLED
 import db
 import espn
 import formatter
@@ -316,23 +316,24 @@ def run_test(
         except Exception:
             pass
 
-        injury_summary = (
-            ", ".join(f"{i['name']} ({i['team']}) — {i['status']}" for i in injuries[:3])
-            if injuries else "None reported"
-        )
         blurb_text = ""
-        try:
-            blurb_text = blurb.generate_blurb({
-                "away_team": game.away_team,
-                "home_team": game.home_team,
-                "sport": game.sport,
-                "away_record": away_record,
-                "home_record": home_record,
-                "series_context": series_ctx or "Regular season",
-                "injuries": injury_summary,
-            })
-        except Exception as exc:
-            log.warning("Blurb skipped: %s", exc)
+        if BLURB_ENABLED:
+            injury_summary = (
+                ", ".join(f"{i['name']} ({i['team']}) — {i['status']}" for i in injuries[:3])
+                if injuries else "None reported"
+            )
+            try:
+                blurb_text = blurb.generate_blurb({
+                    "away_team": game.away_team,
+                    "home_team": game.home_team,
+                    "sport": game.sport,
+                    "away_record": away_record,
+                    "home_record": home_record,
+                    "series_context": series_ctx or "Regular season",
+                    "injuries": injury_summary,
+                })
+            except Exception as exc:
+                log.warning("Blurb skipped: %s", exc)
 
         blocks = formatter.build_pregame_blocks(game=game)
         text = f"Game Day: {game.away_team} @ {game.home_team}"
