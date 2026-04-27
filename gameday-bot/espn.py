@@ -223,10 +223,7 @@ def get_games_for_date(
         series = event.get("competitions", [{}])[0].get("series")
         if isinstance(series, list):
             series = series[0] if series else None
-        if isinstance(series, dict):
-            summary = series.get("summary", "")
-            if summary:
-                series_ctx = summary
+        series_ctx = _series_context(series)
 
         venue = event.get("competitions", [{}])[0].get("venue", {}).get("fullName", "")
 
@@ -339,8 +336,7 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     series = data.get("header", {}).get("competitions", [{}])[0].get("series")
     if isinstance(series, list):
         series = series[0] if series else None
-    if isinstance(series, dict):
-        series_ctx = series.get("summary", "")
+    series_ctx = _series_context(series)
 
     is_final = status_name in ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
 
@@ -377,6 +373,29 @@ def basketball_halftime_scores(plays: list) -> Optional[tuple]:
         if play.get("period", {}).get("number") == 2:
             return play.get("awayScore", 0), play.get("homeScore", 0)
     return None
+
+
+def _series_context(series: dict) -> Optional[str]:
+    """Build a human-readable series context from the ESPN series object."""
+    if not series or not isinstance(series, dict):
+        return None
+    completed = series.get("completed", False)
+    competitors = series.get("competitors", [])
+    if len(competitors) == 2:
+        c0, c1 = competitors[0], competitors[1]
+        w0 = int(c0.get("wins", 0))
+        w1 = int(c1.get("wins", 0))
+        name0 = (c0.get("team", {}).get("shortDisplayName")
+                 or c0.get("team", {}).get("abbreviation") or "")
+        name1 = (c1.get("team", {}).get("shortDisplayName")
+                 or c1.get("team", {}).get("abbreviation") or "")
+        if w0 == w1:
+            return f"Series tied {w0}-{w1}"
+        leader, lw, tw = (name0, w0, w1) if w0 > w1 else (name1, w1, w0)
+        verb = "win" if completed else "lead"
+        return f"{leader} {verb} series {lw}-{tw}"
+    # Fall back to raw ESPN summary string
+    return series.get("summary") or None
 
 
 def get_team_record(sport: str, league: str, team_id: str) -> Optional[Record]:
