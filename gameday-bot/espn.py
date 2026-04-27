@@ -222,7 +222,7 @@ def get_games_for_date(
         series_ctx = None
         series = event.get("competitions", [{}])[0].get("series")
         if isinstance(series, list):
-            series = series[0] if series else None
+            series = next((s for s in series if s.get("type") == "playoff"), series[0] if series else None)
         series_ctx = _series_context(series, team_hints=competitors)
 
         venue = event.get("competitions", [{}])[0].get("venue", {}).get("fullName", "")
@@ -335,7 +335,7 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     series_ctx = None
     series = data.get("header", {}).get("competitions", [{}])[0].get("series")
     if isinstance(series, list):
-        series = series[0] if series else None
+        series = next((s for s in series if s.get("type") == "playoff"), series[0] if series else None)
     series_ctx = _series_context(series, team_hints=header_comps)
 
     is_final = status_name in ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
