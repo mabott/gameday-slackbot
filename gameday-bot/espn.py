@@ -375,26 +375,39 @@ def basketball_halftime_scores(plays: list) -> Optional[tuple]:
     return None
 
 
+def _team_name_from_competitor(c: dict) -> str:
+    """Extract the best available team name from a series competitor entry."""
+    team = c.get("team", {})
+    return (
+        team.get("shortDisplayName") or team.get("abbreviation") or
+        team.get("displayName") or team.get("name") or
+        c.get("shortDisplayName") or c.get("abbreviation") or
+        c.get("displayName") or c.get("name") or ""
+    )
+
+
 def _series_context(series: dict) -> Optional[str]:
     """Build a human-readable series context from the ESPN series object."""
     if not series or not isinstance(series, dict):
         return None
-    completed = series.get("completed", False)
+    log.debug("ESPN series object: %s", series)
     competitors = series.get("competitors", [])
     if len(competitors) == 2:
         c0, c1 = competitors[0], competitors[1]
         w0 = int(c0.get("wins", 0))
         w1 = int(c1.get("wins", 0))
-        name0 = (c0.get("team", {}).get("shortDisplayName")
-                 or c0.get("team", {}).get("abbreviation") or "")
-        name1 = (c1.get("team", {}).get("shortDisplayName")
-                 or c1.get("team", {}).get("abbreviation") or "")
+        name0 = _team_name_from_competitor(c0)
+        name1 = _team_name_from_competitor(c1)
+        if not name0 and not name1:
+            log.warning("Series competitors have no team names; falling back to summary. Keys: %s", list(c0.keys()))
+            return series.get("summary") or None
         if w0 == w1:
             return f"Series tied {w0}-{w1}"
         leader, lw, tw = (name0, w0, w1) if w0 > w1 else (name1, w1, w0)
-        verb = "win" if completed else "lead"
+        # Use "win" only when a team has enough wins to clinch (best-of-7 = 4)
+        verb = "win" if max(w0, w1) >= 4 else "lead"
         return f"{leader} {verb} series {lw}-{tw}"
-    # Fall back to raw ESPN summary string
+    log.warning("Series object has unexpected competitor count (%d); falling back to summary", len(competitors))
     return series.get("summary") or None
 
 
