@@ -120,7 +120,8 @@ game = Game(
     series_context=None,
 )
 
-blocks = formatter.build_pregame_blocks(
+blocks = formatter.build_pregame_blocks(game=game)
+thread_blocks = formatter.build_pregame_thread_blocks(
     game=game,
     home_record="9-4",
     away_record="8-5",
@@ -130,7 +131,10 @@ blocks = formatter.build_pregame_blocks(
 )
 
 import json
+print("Top-level blocks:")
 print(json.dumps(blocks, indent=2))
+print("\nThread blocks:")
+print(json.dumps(thread_blocks, indent=2))
 EOF
 
 echo ""

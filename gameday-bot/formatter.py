@@ -29,7 +29,7 @@ def build_pregame_blocks(game) -> list[dict]:
     if game.venue:
         parts.append(game.venue)
     if game.broadcasts:
-        parts.append(", ".join(game.broadcasts))
+        parts.append(" / ".join(game.broadcasts))
     return [_header(" · ".join(parts))]
 
 

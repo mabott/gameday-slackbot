@@ -171,6 +171,7 @@ def _run_pregame(game_id: str, sport: str, league: str):
         start_time=datetime.fromisoformat(row["start_time"]),
         status="pre",
         series_context=series_ctx,
+        broadcasts=summary.broadcasts if summary else [],
     )
 
     # Odds (graceful)
