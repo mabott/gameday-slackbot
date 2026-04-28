@@ -53,6 +53,7 @@ class GameSummary:
     series_context: Optional[str] = None
     injuries: list = field(default_factory=list)
     plays: list = field(default_factory=list)
+    broadcasts: list = field(default_factory=list)
 
 
 @dataclass
@@ -338,6 +339,12 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         series = next((s for s in series if s.get("type") == "playoff"), series[0] if series else None)
     series_ctx = _series_context(series, team_hints=header_comps)
 
+    broadcasts = [
+        b.get("names", [""])[0]
+        for b in data.get("header", {}).get("competitions", [{}])[0].get("broadcasts", [])
+    ]
+    broadcasts = [b for b in broadcasts if b]
+
     is_final = status_name in ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
 
     return GameSummary(
@@ -355,6 +362,7 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         series_context=series_ctx,
         injuries=injuries,
         plays=data.get("plays", []),
+        broadcasts=broadcasts,
     )
 
 
