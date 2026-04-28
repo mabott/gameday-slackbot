@@ -28,10 +28,9 @@ def build_pregame_blocks(game) -> list[dict]:
              _pacific(game.start_time)]
     if game.venue:
         parts.append(game.venue)
-    blocks = [_header(" · ".join(parts))]
     if game.broadcasts:
-        blocks.append(_section(f"📺 *Watch:* {' / '.join(game.broadcasts)}"))
-    return blocks
+        parts.append(" / ".join(game.broadcasts))
+    return [_header(" · ".join(parts))]
 
 
 def build_pregame_thread_blocks(
