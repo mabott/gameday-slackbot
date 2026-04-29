@@ -138,4 +138,12 @@ print(json.dumps(thread_blocks, indent=2))
 EOF
 
 echo ""
+echo "--- 6. Automated tests (pytest) ---"
+if ! python3 -c "import pytest" 2>/dev/null; then
+  echo "pytest not found — run: pip install -r requirements-dev.txt"
+  exit 1
+fi
+python3 -m pytest tests/ -v
+
+echo ""
 echo "=== All checks complete ==="
