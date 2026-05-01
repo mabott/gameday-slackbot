@@ -44,7 +44,7 @@ def schedule_day(scheduler: BackgroundScheduler, date_str: str, team_id_map: dic
             continue
 
         try:
-            games = espn.get_games_for_date(sport, league, espn_date, team_ids)
+            games = espn.get_games_for_date(sport, league, espn_date, team_ids, include_final=True)
         except Exception as exc:
             log.error("Failed to fetch schedule for %s/%s: %s", sport, league, exc)
             continue
