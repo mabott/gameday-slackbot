@@ -66,6 +66,7 @@ def schedule_day(scheduler: BackgroundScheduler, date_str: str, team_id_map: dic
                 date=date_str,
                 home_record=game.home_record,
                 away_record=game.away_record,
+                broadcasts=",".join(game.broadcasts),
             )
 
             _schedule_game_jobs(scheduler, game, date_str)
@@ -171,7 +172,10 @@ def _run_pregame(game_id: str, sport: str, league: str):
         start_time=datetime.fromisoformat(row["start_time"]),
         status="pre",
         series_context=series_ctx,
-        broadcasts=summary.broadcasts if summary else [],
+        broadcasts=(
+            [b for b in row.get("broadcasts", "").split(",") if b]
+            or (summary.broadcasts if summary else [])
+        ),
     )
 
     # Odds (graceful)
