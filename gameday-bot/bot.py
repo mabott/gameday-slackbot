@@ -81,6 +81,7 @@ def main():
         minute=0,
         id="daily_refresh",
         replace_existing=True,
+        timezone=TZ,
     )
 
     # Run immediately on startup
