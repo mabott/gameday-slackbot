@@ -48,6 +48,8 @@ class GameSummary:
     home_record: str
     away_record: str
     period: str
+    period_num: int = 0       # current period number (0 if unknown)
+    clock_secs: float = 0.0   # seconds remaining on game clock
     leaders: list = field(default_factory=list)
     goalie_saves: dict = field(default_factory=dict)
     series_context: Optional[str] = None
@@ -293,6 +295,8 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     status_detail = data.get("header", {}).get("competitions", [{}])[0].get("status", {})
     status_name = status_detail.get("type", {}).get("name", "")
     period_text = status_detail.get("type", {}).get("shortDetail", "")
+    period_num = int(status_detail.get("period", 0) or 0)
+    clock_secs = float(status_detail.get("clock", 0.0) or 0.0)
 
     # Leaders
     leaders = []
@@ -357,6 +361,8 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         home_record=record(home),
         away_record=record(away),
         period=period_text,
+        period_num=period_num,
+        clock_secs=clock_secs,
         leaders=leaders,
         goalie_saves=goalie_saves,
         series_context=series_ctx,

@@ -253,7 +253,10 @@ def _run_midgame(game_id: str, sport: str, league: str):
         return
 
     try:
-        summary = espn.get_game_summary(sport, league, game_id)
+        if sport == "basketball":
+            summary = poller.poll_for_halftime(game_id, sport, league)
+        else:
+            summary = espn.get_game_summary(sport, league, game_id)
     except Exception as exc:
         log.error("Failed to fetch mid-game summary for %s: %s", game_id, exc)
         return

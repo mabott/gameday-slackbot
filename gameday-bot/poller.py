@@ -1,5 +1,7 @@
 import logging
 import time
+from dataclasses import replace
+from typing import Optional
 
 import espn
 import db
@@ -10,6 +12,60 @@ log = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 300  # 5 minutes
 MAX_POLLS = 36               # give up after 3 hours of polling
+
+HALFTIME_MAX_POLLS = 20      # give up waiting for halftime after ~30-40 minutes
+
+
+def _sleep_for_clock(clock_secs: float) -> int:
+    """
+    Estimate real-world sleep time from NBA game clock seconds.
+
+    NBA clocks stop constantly — fouls, timeouts, made baskets. The last
+    2 minutes of a quarter routinely take 15+ real minutes, so we apply a
+    larger multiplier there. Values are clamped to [60, 600] seconds.
+    """
+    if clock_secs <= 0:
+        return 60  # clock at 0:00 but halftime not yet confirmed — check soon
+    if clock_secs <= 120:
+        return max(60, min(int(clock_secs * 4), 480))
+    return max(60, min(int(clock_secs * 2), 600))
+
+
+def poll_for_halftime(game_id: str, sport: str, league: str) -> Optional[espn.GameSummary]:
+    """
+    Poll ESPN until Q2 ends, then return a summary with the actual halftime
+    scores taken from play-by-play data. Uses the game clock to pace polls.
+    Falls back to the most recent live summary if polling times out.
+    """
+    log.info("Polling for basketball halftime: game %s", game_id)
+    summary = None
+
+    for attempt in range(HALFTIME_MAX_POLLS):
+        summary = espn.get_game_summary(sport, league, game_id)
+        if not summary:
+            time.sleep(120)
+            continue
+
+        at_halftime = summary.period_num >= 3 or "half" in summary.period.lower()
+        if at_halftime:
+            log.info("Halftime confirmed for %s after %d poll(s)", game_id, attempt + 1)
+            ht = espn.basketball_halftime_scores(summary.plays)
+            if ht:
+                summary = replace(summary, away_score=ht[0], home_score=ht[1])
+            return summary
+
+        sleep_secs = _sleep_for_clock(summary.clock_secs)
+        log.debug(
+            "Game %s: Q%d, %s (%.0fs on clock) — sleeping %ds",
+            game_id, summary.period_num, summary.period, summary.clock_secs, sleep_secs,
+        )
+        time.sleep(sleep_secs)
+
+    log.warning(
+        "Halftime poll timed out for %s after %d attempts, using live score",
+        game_id, HALFTIME_MAX_POLLS,
+    )
+    return summary
 
 
 def poll_for_final(game_id: str, sport: str, league: str):
