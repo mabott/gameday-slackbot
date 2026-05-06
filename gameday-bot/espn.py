@@ -295,8 +295,14 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     status_detail = data.get("header", {}).get("competitions", [{}])[0].get("status", {})
     status_name = status_detail.get("type", {}).get("name", "")
     period_text = status_detail.get("type", {}).get("shortDetail", "")
-    period_num = int(status_detail.get("period", 0) or 0)
-    clock_secs = float(status_detail.get("clock", 0.0) or 0.0)
+    try:
+        period_num = int(status_detail.get("period", 0) or 0)
+    except ValueError:
+        period_num = 0
+    try:
+        clock_secs = float(status_detail.get("clock", 0.0) or 0.0)
+    except ValueError:
+        clock_secs = 0.0
 
     # Leaders
     leaders = []
