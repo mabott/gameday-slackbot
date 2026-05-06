@@ -47,6 +47,52 @@ def test_upsert_and_get_game_roundtrip(tmp_db):
     assert row["away_record"] == "8-6"
 
 
+def test_upsert_stores_broadcasts(tmp_db):
+    db.upsert_game(
+        game_id="g001", sport="baseball", home_team="Los Angeles Dodgers",
+        away_team="Chicago Cubs", start_time_iso="2026-05-01T19:10:00+00:00",
+        date="2026-05-01", broadcasts="FS1,Apple TV+",
+    )
+    row = db.get_game("g001")
+    assert row["broadcasts"] == "FS1,Apple TV+"
+
+
+def test_broadcasts_parse_to_list(tmp_db):
+    db.upsert_game(
+        game_id="g001", sport="baseball", home_team="Los Angeles Dodgers",
+        away_team="Chicago Cubs", start_time_iso="2026-05-01T19:10:00+00:00",
+        date="2026-05-01", broadcasts="FS1,Apple TV+",
+    )
+    row = db.get_game("g001")
+    parsed = [b for b in row.get("broadcasts", "").split(",") if b]
+    assert parsed == ["FS1", "Apple TV+"]
+
+
+def test_broadcasts_empty_string_parses_to_empty_list(tmp_db):
+    db.upsert_game(
+        game_id="g001", sport="baseball", home_team="Los Angeles Dodgers",
+        away_team="Chicago Cubs", start_time_iso="2026-05-01T19:10:00+00:00",
+        date="2026-05-01", broadcasts="",
+    )
+    row = db.get_game("g001")
+    parsed = [b for b in row.get("broadcasts", "").split(",") if b]
+    assert parsed == []
+
+
+def test_upsert_updates_broadcasts_on_conflict(tmp_db):
+    db.upsert_game(
+        game_id="g001", sport="baseball", home_team="Los Angeles Dodgers",
+        away_team="Chicago Cubs", start_time_iso="2026-05-01T19:10:00+00:00",
+        date="2026-05-01", broadcasts="FS1",
+    )
+    db.upsert_game(
+        game_id="g001", sport="baseball", home_team="Los Angeles Dodgers",
+        away_team="Chicago Cubs", start_time_iso="2026-05-01T19:10:00+00:00",
+        date="2026-05-01", broadcasts="ESPN,TNT",
+    )
+    assert db.get_game("g001")["broadcasts"] == "ESPN,TNT"
+
+
 def test_upsert_updates_records_on_conflict(tmp_db):
     _insert("g001")
     db.upsert_game(
