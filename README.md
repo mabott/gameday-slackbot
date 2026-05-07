@@ -61,6 +61,15 @@ Sign in at [console.anthropic.com](https://console.anthropic.com) → **API Keys
 
 Register for a free key (500 req/month) at [the-odds-api.com](https://the-odds-api.com). Leave blank to omit odds from posts.
 
+### Enabling Claude blurbs (`BLURB_ENABLED`)
+
+Setting `ANTHROPIC_API_KEY` alone is not enough — blurbs are off by default to avoid unexpected API charges. Set `BLURB_ENABLED=true` in `.env` to turn them on:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+BLURB_ENABLED=true
+```
+
 ---
 
 ## Running
@@ -86,13 +95,22 @@ cd gameday-bot && DRY_RUN=true python3 bot.py
 Fire all three posts immediately without waiting for a real game:
 
 ```bash
-cd gameday-bot && python3 test_post.py                    # synthetic game
-cd gameday-bot && python3 test_post.py --team "Dodgers"   # next real Dodgers game
-cd gameday-bot && python3 test_post.py --stage pre        # pre-game only
-cd gameday-bot && python3 test_post.py --delay 10         # 10s between posts
+cd gameday-bot && python3 test_post.py                             # synthetic game
+cd gameday-bot && python3 test_post.py --team "Dodgers"            # next real Dodgers game
+cd gameday-bot && python3 test_post.py --team "Dodgers" --historical  # most recent completed Dodgers game
+cd gameday-bot && python3 test_post.py --stage pre                 # pre-game only
+cd gameday-bot && python3 test_post.py --delay 10                  # 10s between posts
 ```
 
 `DRY_RUN=true` works with `test_post.py` too.
+
+### Force ESPN ID cache refresh
+
+If team IDs look stale or a new team was added, force re-discovery and exit:
+
+```bash
+cd gameday-bot && python3 bot.py --refresh-ids
+```
 
 ### Test runner
 

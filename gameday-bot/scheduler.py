@@ -66,6 +66,7 @@ def schedule_day(scheduler: BackgroundScheduler, date_str: str, team_id_map: dic
                 date=date_str,
                 home_record=game.home_record,
                 away_record=game.away_record,
+                broadcasts=",".join(game.broadcasts),
             )
 
             _schedule_game_jobs(scheduler, game, date_str)
@@ -171,7 +172,10 @@ def _run_pregame(game_id: str, sport: str, league: str):
         start_time=datetime.fromisoformat(row["start_time"]),
         status="pre",
         series_context=series_ctx,
-        broadcasts=summary.broadcasts if summary else [],
+        broadcasts=(
+            [b for b in row.get("broadcasts", "").split(",") if b]
+            or (summary.broadcasts if summary else [])
+        ),
     )
 
     # Odds (graceful)
@@ -249,7 +253,10 @@ def _run_midgame(game_id: str, sport: str, league: str):
         return
 
     try:
-        summary = espn.get_game_summary(sport, league, game_id)
+        if sport == "basketball":
+            summary = poller.poll_for_halftime(game_id, sport, league)
+        else:
+            summary = espn.get_game_summary(sport, league, game_id)
     except Exception as exc:
         log.error("Failed to fetch mid-game summary for %s: %s", game_id, exc)
         return

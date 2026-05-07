@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import signal
 import sys
@@ -80,6 +81,7 @@ def main():
         minute=0,
         id="daily_refresh",
         replace_existing=True,
+        timezone=TZ,
     )
 
     # Run immediately on startup
@@ -99,4 +101,21 @@ def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Gameday Slack bot")
+    parser.add_argument(
+        "--refresh-ids",
+        action="store_true",
+        help="Force re-discovery of ESPN team IDs (deletes the cache and re-fetches), then exit",
+    )
+    args = parser.parse_args()
+
+    if args.refresh_ids:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            stream=sys.stdout,
+        )
+        espn.refresh_team_ids()
+        sys.exit(0)
+
     main()

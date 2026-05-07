@@ -24,7 +24,7 @@ def init_db():
                 away_record TEXT DEFAULT ''
             )
         """)
-        for col in ("home_record", "away_record"):
+        for col in ("home_record", "away_record", "broadcasts"):
             try:
                 conn.execute(f"ALTER TABLE games ADD COLUMN {col} TEXT DEFAULT ''")
             except Exception:
@@ -44,17 +44,18 @@ def _conn():
 
 
 def upsert_game(game_id, sport, home_team, away_team, start_time_iso, date,
-                home_record="", away_record=""):
+                home_record="", away_record="", broadcasts=""):
     with _conn() as conn:
         conn.execute("""
             INSERT INTO games (game_id, sport, home_team, away_team, start_time, date,
-                               home_record, away_record)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                               home_record, away_record, broadcasts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(game_id) DO UPDATE SET
                 home_record = excluded.home_record,
-                away_record = excluded.away_record
+                away_record = excluded.away_record,
+                broadcasts = excluded.broadcasts
         """, (game_id, sport, home_team, away_team, start_time_iso, date,
-              home_record, away_record))
+              home_record, away_record, broadcasts))
         conn.commit()
 
 

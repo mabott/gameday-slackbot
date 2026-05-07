@@ -63,12 +63,11 @@ def get_game_weather(team_name: str, game_start_utc: datetime) -> Optional[Weath
     winds = hourly.get("windspeed_10m", [])
     codes = hourly.get("weathercode", [])
 
-    # Match the hour closest to game start
-    game_hour = game_start_utc.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:00")
-    # Open-Meteo returns local times; try direct match first, then find closest
+    # Open-Meteo returns local times; match the hour prefix of the UTC game start
+    game_hour = game_start_utc.strftime("%Y-%m-%dT%H")
     idx = None
     for i, t in enumerate(times):
-        if t.startswith(game_start_utc.strftime("%Y-%m-%dT%H")):
+        if t.startswith(game_hour):
             idx = i
             break
 
