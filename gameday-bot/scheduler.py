@@ -13,8 +13,6 @@ import weather
 import poller
 from config import (
     TEAM_CONFIG,
-    HALFTIME_OFFSETS,
-    EXPECTED_DURATIONS,
     ODDS_SPORT_KEYS,
     STADIUM_COORDS,
     BLURB_ENABLED,
@@ -26,7 +24,7 @@ log = logging.getLogger(__name__)
 def schedule_day(scheduler: BackgroundScheduler, date_str: str, team_id_map: dict):
     """
     date_str: YYYY-MM-DD
-    Fetches games for all configured teams and schedules pre/mid/final jobs.
+    Fetches games for all configured teams and schedules pregame and in-game jobs.
     """
     espn_date = date_str.replace("-", "")
     already_seen: set[str] = set()
@@ -75,66 +73,44 @@ def schedule_day(scheduler: BackgroundScheduler, date_str: str, team_id_map: dic
 def _schedule_game_jobs(scheduler: BackgroundScheduler, game, date_str: str):
     now = datetime.now(timezone.utc)
     sport = game.sport
-
     pregame_time = game.start_time - timedelta(hours=1)
-    midgame_time = game.start_time + timedelta(hours=HALFTIME_OFFSETS.get(sport, 2.0))
-    poller_time = game.start_time + timedelta(hours=EXPECTED_DURATIONS.get(sport, 3.0))
 
-    # Detect missed stages (window passed but not yet posted)
-    pregame_missed = not db.is_posted(game.game_id, "pregame") and pregame_time <= now
-    midgame_missed = not db.is_posted(game.game_id, "midgame") and midgame_time <= now
-    poller_missed = not db.is_posted(game.game_id, "final") and poller_time <= now
-
-    if not db.is_posted(game.game_id, "pregame") and pregame_time > now:
+    # Pregame: schedule or catch up immediately if window has passed
+    if not db.is_posted(game.game_id, "pregame"):
+        run_at = pregame_time if pregame_time > now else now + timedelta(seconds=2)
         scheduler.add_job(
             _run_pregame,
             "date",
-            run_date=pregame_time,
+            run_date=run_at,
             args=[game.game_id, sport, game.league],
             id=f"pregame_{game.game_id}",
             replace_existing=True,
         )
-        log.info("Scheduled pre-game for %s @ %s at %s UTC", game.away_team, game.home_team, pregame_time)
-    elif db.is_posted(game.game_id, "pregame"):
-        log.info("Pre-game already posted for %s, skipping schedule", game.game_id)
+        if pregame_time <= now:
+            log.warning("Pre-game missed for %s — scheduling catch-up immediately", game.game_id)
+        else:
+            log.info("Scheduled pre-game for %s @ %s at %s UTC", game.away_team, game.home_team, pregame_time)
+    else:
+        log.info("Pre-game already posted for %s", game.game_id)
 
-    if not db.is_posted(game.game_id, "midgame") and midgame_time > now:
+    # In-game poller: starts at game time, handles period updates and final.
+    # If game has already started (or is over), start immediately.
+    if not db.is_posted(game.game_id, "final"):
+        run_at = game.start_time if game.start_time > now else now + timedelta(seconds=10)
         scheduler.add_job(
-            _run_midgame,
+            _run_in_game,
             "date",
-            run_date=midgame_time,
+            run_date=run_at,
             args=[game.game_id, sport, game.league],
-            id=f"midgame_{game.game_id}",
+            id=f"ingame_{game.game_id}",
             replace_existing=True,
         )
-        log.info("Scheduled mid-game for %s at %s UTC", game.game_id, midgame_time)
-
-    if not db.is_posted(game.game_id, "final") and poller_time > now:
-        scheduler.add_job(
-            _run_poller,
-            "date",
-            run_date=poller_time,
-            args=[game.game_id, sport, game.league],
-            id=f"poller_{game.game_id}",
-            replace_existing=True,
-        )
-        log.info("Scheduled final poller for %s at %s UTC", game.game_id, poller_time)
-
-    # Catch up any stages whose windows have already passed
-    if pregame_missed or midgame_missed or poller_missed:
-        log.warning(
-            "Catch-up needed for %s: pregame=%s midgame=%s final=%s",
-            game.game_id, pregame_missed, midgame_missed, poller_missed,
-        )
-        catchup_time = datetime.now(timezone.utc) + timedelta(seconds=2)
-        scheduler.add_job(
-            _run_catchup,
-            "date",
-            run_date=catchup_time,
-            args=[game.game_id, sport, game.league, pregame_missed, midgame_missed, poller_missed],
-            id=f"catchup_{game.game_id}",
-            replace_existing=True,
-        )
+        if game.start_time <= now:
+            log.warning("In-game poller for %s starting immediately (game already started or finished)", game.game_id)
+        else:
+            log.info("Scheduled in-game poller for %s at %s UTC", game.game_id, game.start_time)
+    else:
+        log.info("Final already posted for %s, skipping in-game schedule", game.game_id)
 
 
 def _run_pregame(game_id: str, sport: str, league: str):
@@ -237,53 +213,5 @@ def _run_pregame(game_id: str, sport: str, league: str):
         log.error("Pre-game post failed for %s", game_id)
 
 
-def _run_midgame(game_id: str, sport: str, league: str):
-    if db.is_posted(game_id, "midgame"):
-        log.info("Mid-game already posted for %s", game_id)
-        return
-
-    row = db.get_game(game_id)
-    if not row:
-        log.error("Game %s not in DB", game_id)
-        return
-
-    thread_ts = row.get("slack_ts")
-    if not thread_ts:
-        log.warning("No slack_ts for %s mid-game update, pre-game may have failed", game_id)
-        return
-
-    try:
-        if sport == "basketball":
-            summary = poller.poll_for_halftime(game_id, sport, league)
-        else:
-            summary = espn.get_game_summary(sport, league, game_id)
-    except Exception as exc:
-        log.error("Failed to fetch mid-game summary for %s: %s", game_id, exc)
-        return
-
-    if not summary:
-        log.warning("No summary returned for mid-game %s", game_id)
-        return
-
-    blocks = formatter.build_midgame_blocks(summary, sport)
-    text = f"Halftime update: {row['away_team']} @ {row['home_team']}"
-    ok = slack_client.post_reply(blocks=blocks, text=text, thread_ts=thread_ts)
-
-    if ok:
-        db.mark_posted(game_id, "midgame")
-        log.info("Mid-game update posted for %s", game_id)
-
-
-def _run_poller(game_id: str, sport: str, league: str):
-    poller.poll_for_final(game_id, sport, league)
-
-
-def _run_catchup(game_id: str, sport: str, league: str, do_pregame: bool, do_midgame: bool, do_poll: bool):
-    """Run missed stages in order so slack_ts is always set before threaded posts."""
-    log.info("Catch-up starting for %s (pregame=%s midgame=%s poll=%s)", game_id, do_pregame, do_midgame, do_poll)
-    if do_pregame:
-        _run_pregame(game_id, sport, league)
-    if do_midgame:
-        _run_midgame(game_id, sport, league)
-    if do_poll:
-        poller.poll_for_final(game_id, sport, league)
+def _run_in_game(game_id: str, sport: str, league: str):
+    poller.poll_in_game_updates(game_id, sport, league)

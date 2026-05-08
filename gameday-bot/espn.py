@@ -378,6 +378,44 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     )
 
 
+def scores_by_period(plays: list) -> dict:
+    """
+    Return {period_num: (cumulative_away, cumulative_home)} using the last play of each period.
+    Scores are running totals — subtract adjacent periods to get per-period deltas.
+    Works for all sports.
+    """
+    result = {}
+    for play in plays:
+        num = play.get("period", {}).get("number")
+        if num is not None:
+            result[num] = (
+                int(play.get("awayScore", 0) or 0),
+                int(play.get("homeScore", 0) or 0),
+            )
+    return result
+
+
+def last_goal_from_plays(plays: list, after_index: int) -> Optional[dict]:
+    """
+    Scan plays[after_index:] for a hockey goal event. Returns a dict with scorer
+    name, team, and the play index (so the caller can advance after_index), or None.
+    """
+    for i in range(after_index, len(plays)):
+        play = plays[i]
+        if "goal" in play.get("type", {}).get("text", "").lower():
+            participants = play.get("participants", [])
+            scorer = (
+                participants[0].get("athlete", {}).get("displayName", "Unknown")
+                if participants else "Unknown"
+            )
+            return {
+                "scorer": scorer,
+                "team": play.get("team", {}).get("displayName", ""),
+                "play_index": i,
+            }
+    return None
+
+
 def baseball_stretch_scores(plays: list) -> Optional[tuple]:
     """Return (away_score, home_score) at the 7th inning stretch, or None."""
     for play in reversed(plays):
