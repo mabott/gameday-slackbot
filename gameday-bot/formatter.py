@@ -210,8 +210,8 @@ def _build_linescore(summary, sport: str, through_period: int, period_scores: di
     col_labels.append("T")
 
     col_w = max(len(lb) for lb in col_labels) + 1
-    away_nick = summary.away_team.split()[-1][:3].upper()
-    home_nick = summary.home_team.split()[-1][:3].upper()
+    away_nick = summary.away_abbr or summary.away_team.split()[-1][:3].upper()
+    home_nick = summary.home_abbr or summary.home_team.split()[-1][:3].upper()
     nick_w = max(len(away_nick), len(home_nick))
 
     def row(nick, scores, total):

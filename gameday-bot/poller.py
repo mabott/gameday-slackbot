@@ -50,9 +50,9 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
     log.info("Starting in-game poller for %s (%s/%s)", game_id, sport, league)
 
     last_period_posted = 0
-    last_score_total = 0   # hockey: detect score changes between polls
-    last_play_index = 0    # hockey: scan position in plays list
-    last_period_text = ""  # baseball: track top/bottom transitions
+    last_score_total = 0    # hockey: detect score changes between polls
+    last_play_index = 0     # hockey: scan position in plays list
+    last_bottom_inning = 0  # baseball: last inning where bottom half was observed
 
     for attempt in range(MAX_IN_GAME_POLLS):
         summary = espn.get_game_summary(sport, league, game_id)
@@ -70,14 +70,16 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
                     _post_goal_alert(game_id, summary, goal["scorer"], goal["team"])
                 last_score_total = current_total
 
+        # --- Baseball: record each bottom half we observe ---
+        if sport == "baseball" and "bot" in summary.period.lower():
+            last_bottom_inning = max(last_bottom_inning, summary.period_num)
+
         # --- Period/quarter/inning end detection ---
-        result = _detect_period_end(summary, sport, last_period_posted, last_period_text)
+        result = _detect_period_end(summary, sport, last_period_posted, last_bottom_inning)
         if result is not None:
             completed_period, period_scores = result
             _post_period_end(game_id, summary, sport, completed_period, period_scores)
             last_period_posted = completed_period
-
-        last_period_text = summary.period
 
         # --- Game over ---
         if summary.status == "post":
@@ -93,23 +95,25 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
 
 
 def _detect_period_end(
-    summary, sport: str, last_period_posted: int, last_period_text: str
+    summary, sport: str, last_period_posted: int, last_bottom_inning: int = 0
 ) -> Optional[tuple]:
     """
     Returns (completed_period_num, period_scores) when a new period has ended,
     otherwise None. Posts one period at a time to handle catch-up correctly.
+
+    For baseball, last_bottom_inning is the most recent inning where the bottom
+    half was observed. We post as soon as we leave that half — regardless of what
+    ESPN calls the intermediate state (End, Mid, Top, etc.).
     """
     period_scores = espn.scores_by_period(summary.plays)
 
     if sport == "baseball":
-        # Post after the bottom half completes: detect "Bot N" → "Top N+1" transition.
-        # period_num is the inning number; we want completed = period_num - 1.
-        current = summary.period.lower()
-        prev = last_period_text.lower()
-        if "bot" in prev and "top" in current:
-            completed = summary.period_num - 1
-            if completed > last_period_posted and completed in period_scores:
-                return completed, period_scores
+        if last_bottom_inning > last_period_posted:
+            current = summary.period.lower()
+            # Trigger when no longer in the bottom of the inning we recorded
+            past_bottom = "bot" not in current or summary.period_num > last_bottom_inning
+            if past_bottom and last_bottom_inning in period_scores:
+                return last_bottom_inning, period_scores
         return None
 
     # Basketball, football, hockey:
