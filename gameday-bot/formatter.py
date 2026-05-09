@@ -87,6 +87,18 @@ def build_midgame_blocks(summary, sport: str) -> list[dict]:
     return blocks
 
 
+def build_highlight_blocks(post: dict) -> list[dict]:
+    title = post.get("title", "")
+    url = post.get("url", "")
+    domain = post.get("domain", "")
+    score = post.get("score", 0)
+    author = post.get("author", "")
+    source = f"via u/{author} on Reddit ({domain})"
+    if score > 0:
+        source += f" · {score} upvotes"
+    return [_section(f"🎬 *{title}*\n{url}\n_{source}_")]
+
+
 def build_final_blocks(summary, sport: str) -> list[dict]:
     if summary.home_score > summary.away_score:
         winner = summary.home_team
