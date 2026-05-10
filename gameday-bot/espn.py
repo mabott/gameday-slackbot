@@ -52,6 +52,8 @@ class GameSummary:
     clock_secs: float = 0.0   # seconds remaining on game clock
     home_abbr: str = ""       # ESPN team abbreviation, e.g. "LAD", "OKC"
     away_abbr: str = ""
+    home_linescores: list = field(default_factory=list)  # per-period scores from ESPN header
+    away_linescores: list = field(default_factory=list)
     leaders: list = field(default_factory=list)
     goalie_saves: dict = field(default_factory=dict)
     series_context: Optional[str] = None
@@ -376,6 +378,8 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         clock_secs=clock_secs,
         home_abbr=team_abbr(h_score),
         away_abbr=team_abbr(a_score),
+        home_linescores=h_score.get("linescores", []),
+        away_linescores=a_score.get("linescores", []),
         leaders=leaders,
         goalie_saves=goalie_saves,
         series_context=series_ctx,

@@ -94,6 +94,20 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
     log.warning("In-game poller timed out for %s after %d attempts", game_id, MAX_IN_GAME_POLLS)
 
 
+def _period_scores_from_linescores(home_ls: list, away_ls: list) -> dict:
+    """
+    Convert ESPN per-period linescores into the cumulative format expected by
+    _build_linescore: {period_num: (cumulative_away, cumulative_home)}.
+    """
+    result = {}
+    home_cum = away_cum = 0
+    for i, (h, a) in enumerate(zip(home_ls, away_ls), start=1):
+        home_cum += int(h.get("value", 0) or 0)
+        away_cum += int(a.get("value", 0) or 0)
+        result[i] = (away_cum, home_cum)
+    return result
+
+
 def _detect_period_end(
     summary, sport: str, last_period_posted: int, last_bottom_inning: int = 0
 ) -> Optional[tuple]:
@@ -101,13 +115,15 @@ def _detect_period_end(
     Returns (completed_period_num, period_scores) when a new period has ended,
     otherwise None. Posts one period at a time to handle catch-up correctly.
 
-    For baseball, last_bottom_inning is the most recent inning where the bottom
-    half was observed. We post as soon as we leave that half — regardless of what
-    ESPN calls the intermediate state (End, Mid, Top, etc.).
-    """
-    period_scores = espn.scores_by_period(summary.plays)
+    Baseball uses plays (period_scores from plays buffer) because inning timing
+    is tracked separately via last_bottom_inning.
 
+    Basketball/football/hockey use ESPN header linescores instead of plays —
+    linescores accumulate reliably for all completed periods throughout the game,
+    whereas the plays buffer only contains recent plays and scrolls off.
+    """
     if sport == "baseball":
+        period_scores = espn.scores_by_period(summary.plays)
         if last_bottom_inning > last_period_posted:
             current = summary.period.lower()
             # Trigger when no longer in the bottom of the inning we recorded
@@ -116,11 +132,14 @@ def _detect_period_end(
                 return last_bottom_inning, period_scores
         return None
 
-    # Basketball, football, hockey:
-    # When period_num == N, period N-1 has ended. Post the earliest un-posted one
-    # so catch-up works one period at a time.
+    # Basketball, football, hockey: use linescores from ESPN header.
+    # len(home_linescores) == number of completed periods, so we can detect
+    # period end without relying on the plays buffer.
+    period_scores = _period_scores_from_linescores(
+        summary.home_linescores, summary.away_linescores
+    )
     next_to_post = last_period_posted + 1
-    if summary.period_num > next_to_post and next_to_post in period_scores:
+    if len(summary.home_linescores) >= next_to_post and next_to_post in period_scores:
         return next_to_post, period_scores
 
     return None
