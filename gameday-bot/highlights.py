@@ -123,6 +123,11 @@ def _is_highlight_post(post: dict, subreddit: str = "") -> bool:
     if subreddit == "baseball" and domain == "v.redd.it":
         return True
 
+    # r/hockey uses "[Video]" flair (brackets included) which our normal flair
+    # set won't match. Every goal/play clip has this flair on v.redd.it.
+    if subreddit == "hockey" and domain == "v.redd.it" and flair == "[video]":
+        return True
+
     flair_match = flair in HIGHLIGHT_FLAIRS
     bracket_match = any(kw in title_lower for kw in HIGHLIGHT_KEYWORDS)
     is_video_domain = any(dom in domain for dom in HIGHLIGHT_DOMAINS)

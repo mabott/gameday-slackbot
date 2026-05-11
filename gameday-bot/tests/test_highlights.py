@@ -89,6 +89,18 @@ class TestIsHighlightPost:
         assert not _is_highlight_post(_post(domain="streamable.com", flair="", title="Freeman crushes one"), subreddit="baseball")
         assert _is_highlight_post(_post(domain="streamable.com", flair="", title="[Highlight] Freeman crushes one"), subreddit="baseball")
 
+    def test_hockey_vredd_with_video_flair_accepted(self):
+        # r/hockey uses "[Video]" flair (with brackets) on all goal clips
+        assert _is_highlight_post(_post(domain="v.redd.it", flair="[Video]", title="[ANA 4 - VGK 3] Hertl gets one back"), subreddit="hockey")
+
+    def test_hockey_vredd_without_video_flair_rejected(self):
+        # Interviews and news also land on v.redd.it — require the flair
+        assert not _is_highlight_post(_post(domain="v.redd.it", flair="", title="Player speaks to press"), subreddit="hockey")
+
+    def test_hockey_video_flair_only_matches_hockey_subreddit(self):
+        # "[Video]" flair should not unlock v.redd.it for other subreddits
+        assert not _is_highlight_post(_post(domain="v.redd.it", flair="[Video]", title="Some play"), subreddit="nba")
+
 
 # ---------------------------------------------------------------------------
 # _team_matches
