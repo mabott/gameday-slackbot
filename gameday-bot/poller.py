@@ -1,6 +1,5 @@
 import logging
 import time
-from dataclasses import replace
 from typing import Optional
 
 import espn
@@ -10,95 +9,182 @@ import slack_client
 
 log = logging.getLogger(__name__)
 
-POLL_INTERVAL_SECONDS = 300  # 5 minutes
-MAX_POLLS = 36               # give up after 3 hours of polling
+MAX_IN_GAME_POLLS = 72  # 72 × 5 min average = ~6 hrs before giving up
 
-HALFTIME_MAX_POLLS = 20      # give up waiting for halftime after ~30-40 minutes
+# Fixed sleep (seconds) for sports where clock-based pacing doesn't apply.
+# Basketball and football use _sleep_for_clock() instead.
+_FIXED_SLEEP = {
+    "hockey": 60,
+    "baseball": 180,
+}
 
 
 def _sleep_for_clock(clock_secs: float) -> int:
     """
-    Estimate real-world sleep time from NBA game clock seconds.
+    Estimate real-world sleep from NBA/NFL game clock seconds.
 
-    NBA clocks stop constantly — fouls, timeouts, made baskets. The last
-    2 minutes of a quarter routinely take 15+ real minutes, so we apply a
-    larger multiplier there. Values are clamped to [60, 600] seconds.
+    The last 2 minutes of a quarter routinely take 15+ real minutes due to
+    constant stoppages, so we apply a larger multiplier there.
+    Clamped to [60, 600] seconds.
     """
     if clock_secs <= 0:
-        return 60  # clock at 0:00 but halftime not yet confirmed — check soon
+        return 60
     if clock_secs <= 120:
         return max(60, min(int(clock_secs * 4), 480))
     return max(60, min(int(clock_secs * 2), 600))
 
 
-def poll_for_halftime(game_id: str, sport: str, league: str) -> Optional[espn.GameSummary]:
+def poll_in_game_updates(game_id: str, sport: str, league: str):
     """
-    Poll ESPN until Q2 ends, then return a summary with the actual halftime
-    scores taken from play-by-play data. Uses the game clock to pace polls.
-    Falls back to the most recent live summary if polling times out.
-    """
-    log.info("Polling for basketball halftime: game %s", game_id)
-    summary = None
+    Poll ESPN from game start through final, posting:
+      - Period/quarter/inning-end summaries with linescore and stat leaders
+      - Hockey goal alerts whenever the score changes between polls
+      - Final recap when the game ends
 
-    for attempt in range(HALFTIME_MAX_POLLS):
-        summary = espn.get_game_summary(sport, league, game_id)
-        if not summary:
-            time.sleep(120)
-            continue
-
-        at_halftime = summary.period_num >= 3 or "half" in summary.period.lower()
-        if at_halftime:
-            log.info("Halftime confirmed for %s after %d poll(s)", game_id, attempt + 1)
-            ht = espn.basketball_halftime_scores(summary.plays)
-            if ht:
-                summary = replace(summary, away_score=ht[0], home_score=ht[1])
-            return summary
-
-        sleep_secs = _sleep_for_clock(summary.clock_secs)
-        log.debug(
-            "Game %s: Q%d, %s (%.0fs on clock) — sleeping %ds",
-            game_id, summary.period_num, summary.period, summary.clock_secs, sleep_secs,
-        )
-        time.sleep(sleep_secs)
-
-    log.warning(
-        "Halftime poll timed out for %s after %d attempts, using live score",
-        game_id, HALFTIME_MAX_POLLS,
-    )
-    return summary
-
-
-def poll_for_final(game_id: str, sport: str, league: str):
-    """
-    Polls ESPN until the game status is final, then posts the final recap.
-    Intended to be called in a background thread/job after expected game duration.
+    Replaces the old separate midgame and final poller jobs.
     """
     if db.is_posted(game_id, "final"):
-        log.info("Final already posted for %s, skipping poll", game_id)
+        log.info("Final already posted for %s, skipping in-game poll", game_id)
         return
 
-    log.info("Starting post-game poll for game %s (%s/%s)", game_id, sport, league)
+    log.info("Starting in-game poller for %s (%s/%s)", game_id, sport, league)
 
-    for attempt in range(MAX_POLLS):
+    last_period_posted = 0
+    last_score_total = 0    # hockey: detect score changes between polls
+    last_play_index = 0     # hockey: scan position in plays list
+    last_bottom_inning = 0  # baseball: last inning where bottom half was observed
+
+    for attempt in range(MAX_IN_GAME_POLLS):
         summary = espn.get_game_summary(sport, league, game_id)
+        if not summary:
+            time.sleep(60)
+            continue
 
-        if summary and summary.status == "post":
-            log.info("Game %s is final after %d polls", game_id, attempt + 1)
+        # --- Hockey: goal alert on score change ---
+        if sport == "hockey":
+            current_total = summary.home_score + summary.away_score
+            if current_total > last_score_total:
+                goal = espn.last_goal_from_plays(summary.plays, last_play_index)
+                if goal:
+                    last_play_index = goal["play_index"] + 1
+                    _post_goal_alert(game_id, summary, goal["scorer"], goal["team"])
+                last_score_total = current_total
+
+        # --- Baseball: record each bottom half we observe ---
+        if sport == "baseball" and "bot" in summary.period.lower():
+            last_bottom_inning = max(last_bottom_inning, summary.period_num)
+
+        # --- Period/quarter/inning end detection ---
+        result = _detect_period_end(summary, sport, last_period_posted, last_bottom_inning)
+        if result is not None:
+            completed_period, period_scores = result
+            _post_period_end(game_id, summary, sport, completed_period, period_scores)
+            last_period_posted = completed_period
+
+        # --- Game over ---
+        if summary.status == "post":
+            log.info("Game %s is final after %d poll(s)", game_id, attempt + 1)
             _post_final(game_id, summary, sport)
             return
 
-        log.debug("Game %s not final yet (attempt %d/%d)", game_id, attempt + 1, MAX_POLLS)
-        time.sleep(POLL_INTERVAL_SECONDS)
+        # --- Sleep ---
+        fixed = _FIXED_SLEEP.get(sport)
+        time.sleep(fixed if fixed else _sleep_for_clock(summary.clock_secs))
 
-    log.warning("Gave up polling for final on game %s after %d attempts", game_id, MAX_POLLS)
+    log.warning("In-game poller timed out for %s after %d attempts", game_id, MAX_IN_GAME_POLLS)
+
+
+def _period_scores_from_linescores(home_ls: list, away_ls: list) -> dict:
+    """
+    Convert ESPN per-period linescores into the cumulative format expected by
+    _build_linescore: {period_num: (cumulative_away, cumulative_home)}.
+    """
+    result = {}
+    home_cum = away_cum = 0
+    for i, (h, a) in enumerate(zip(home_ls, away_ls), start=1):
+        home_cum += int(h.get("value", 0) or 0)
+        away_cum += int(a.get("value", 0) or 0)
+        result[i] = (away_cum, home_cum)
+    return result
+
+
+def _detect_period_end(
+    summary, sport: str, last_period_posted: int, last_bottom_inning: int = 0
+) -> Optional[tuple]:
+    """
+    Returns (completed_period_num, period_scores) when a new period has ended,
+    otherwise None. Posts one period at a time to handle catch-up correctly.
+
+    Baseball uses plays (period_scores from plays buffer) because inning timing
+    is tracked separately via last_bottom_inning.
+
+    Basketball/football/hockey use ESPN header linescores instead of plays —
+    linescores accumulate reliably for all completed periods throughout the game,
+    whereas the plays buffer only contains recent plays and scrolls off.
+    """
+    if sport == "baseball":
+        period_scores = espn.scores_by_period(summary.plays)
+        if last_bottom_inning > last_period_posted:
+            current = summary.period.lower()
+            # Trigger when no longer in the bottom of the inning we recorded
+            past_bottom = "bot" not in current or summary.period_num > last_bottom_inning
+            if past_bottom and last_bottom_inning in period_scores:
+                return last_bottom_inning, period_scores
+        return None
+
+    # Basketball, football, hockey: use linescores from ESPN header.
+    # len(home_linescores) == number of completed periods, so we can detect
+    # period end without relying on the plays buffer.
+    period_scores = _period_scores_from_linescores(
+        summary.home_linescores, summary.away_linescores
+    )
+    next_to_post = last_period_posted + 1
+    if len(summary.home_linescores) >= next_to_post and next_to_post in period_scores:
+        return next_to_post, period_scores
+
+    return None
+
+
+def _post_period_end(game_id: str, summary, sport: str, period_num: int, period_scores: dict):
+    row = db.get_game(game_id)
+    if not row:
+        log.error("Game %s not in DB for period-end post", game_id)
+        return
+    thread_ts = row.get("slack_ts")
+    if not thread_ts:
+        log.warning("No slack_ts for %s — pre-game may have failed; skipping period-end post", game_id)
+        return
+
+    blocks = formatter.build_period_end_blocks(summary, sport, period_num, period_scores)
+    label = formatter._period_end_label(sport, period_num)
+    text = f"{label}: {summary.away_team} {summary.away_score} — {summary.home_team} {summary.home_score}"
+    slack_client.post_reply(blocks=blocks, text=text, thread_ts=thread_ts)
+    log.info("Period %d end posted for %s", period_num, game_id)
+
+
+def _post_goal_alert(game_id: str, summary, scorer_name: str, scorer_team: str):
+    row = db.get_game(game_id)
+    if not row:
+        return
+    thread_ts = row.get("slack_ts")
+    if not thread_ts:
+        return
+
+    blocks = formatter.build_goal_alert_blocks(summary, scorer_name, scorer_team)
+    text = f"Goal — {scorer_team}: {scorer_name}"
+    slack_client.post_reply(blocks=blocks, text=text, thread_ts=thread_ts)
+    log.info("Goal alert posted for %s (scorer: %s)", game_id, scorer_name)
 
 
 def _post_final(game_id: str, summary, sport: str):
+    if db.is_posted(game_id, "final"):
+        log.info("Final already posted for %s", game_id)
+        return
+
     row = db.get_game(game_id)
     if not row:
         log.error("Game %s not found in DB, cannot post final", game_id)
         return
-
     thread_ts = row.get("slack_ts")
     if not thread_ts:
         log.error("No slack_ts for game %s, cannot post final in thread", game_id)
@@ -106,7 +192,6 @@ def _post_final(game_id: str, summary, sport: str):
 
     blocks = formatter.build_final_blocks(summary, sport)
     text = f"Final: {summary.away_team} {summary.away_score} — {summary.home_team} {summary.home_score}"
-
     ok = slack_client.post_reply(blocks=blocks, text=text, thread_ts=thread_ts)
     if ok:
         db.mark_posted(game_id, "final")

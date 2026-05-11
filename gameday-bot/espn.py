@@ -50,6 +50,10 @@ class GameSummary:
     period: str
     period_num: int = 0       # current period number (0 if unknown)
     clock_secs: float = 0.0   # seconds remaining on game clock
+    home_abbr: str = ""       # ESPN team abbreviation, e.g. "LAD", "OKC"
+    away_abbr: str = ""
+    home_linescores: list = field(default_factory=list)  # per-period scores from ESPN header
+    away_linescores: list = field(default_factory=list)
     leaders: list = field(default_factory=list)
     goalie_saves: dict = field(default_factory=dict)
     series_context: Optional[str] = None
@@ -284,6 +288,9 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     def team_name(c):
         return c.get("team", {}).get("displayName", "")
 
+    def team_abbr(c):
+        return c.get("team", {}).get("abbreviation", "")
+
     def score(c):
         return int(c.get("score", 0) or 0)
 
@@ -369,6 +376,10 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         period=period_text,
         period_num=period_num,
         clock_secs=clock_secs,
+        home_abbr=team_abbr(h_score),
+        away_abbr=team_abbr(a_score),
+        home_linescores=h_score.get("linescores", []),
+        away_linescores=a_score.get("linescores", []),
         leaders=leaders,
         goalie_saves=goalie_saves,
         series_context=series_ctx,
@@ -376,6 +387,44 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         plays=data.get("plays", []),
         broadcasts=broadcasts,
     )
+
+
+def scores_by_period(plays: list) -> dict:
+    """
+    Return {period_num: (cumulative_away, cumulative_home)} using the last play of each period.
+    Scores are running totals — subtract adjacent periods to get per-period deltas.
+    Works for all sports.
+    """
+    result = {}
+    for play in plays:
+        num = play.get("period", {}).get("number")
+        if num is not None:
+            result[num] = (
+                int(play.get("awayScore", 0) or 0),
+                int(play.get("homeScore", 0) or 0),
+            )
+    return result
+
+
+def last_goal_from_plays(plays: list, after_index: int) -> Optional[dict]:
+    """
+    Scan plays[after_index:] for a hockey goal event. Returns a dict with scorer
+    name, team, and the play index (so the caller can advance after_index), or None.
+    """
+    for i in range(after_index, len(plays)):
+        play = plays[i]
+        if "goal" in play.get("type", {}).get("text", "").lower():
+            participants = play.get("participants", [])
+            scorer = (
+                participants[0].get("athlete", {}).get("displayName", "Unknown")
+                if participants else "Unknown"
+            )
+            return {
+                "scorer": scorer,
+                "team": play.get("team", {}).get("displayName", ""),
+                "play_index": i,
+            }
+    return None
 
 
 def baseball_stretch_scores(plays: list) -> Optional[tuple]:

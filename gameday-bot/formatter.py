@@ -99,6 +99,40 @@ def build_highlight_blocks(post: dict) -> list[dict]:
     return [_section(f"🎬 *{title}*\n{url}\n_{source}_")]
 
 
+def build_period_end_blocks(summary, sport: str, period_num: int, period_scores: dict) -> list[dict]:
+    emoji = SPORT_EMOJIS.get(sport, "🏟️")
+    label = _period_end_label(sport, period_num)
+
+    blocks = [
+        _header(f"{emoji} {label}"),
+        _section(
+            f"*{summary.away_team} {summary.away_score} — {summary.home_team} {summary.home_score}*"
+        ),
+    ]
+
+    linescore = _build_linescore(summary, sport, period_num, period_scores)
+    if linescore:
+        blocks.append(_section(linescore))
+
+    stat_line = _build_stat_line(summary, sport)
+    if stat_line:
+        blocks.append(_divider())
+        blocks.append(_section(stat_line))
+
+    return blocks
+
+
+def build_goal_alert_blocks(summary, scorer_name: str, scorer_team: str) -> list[dict]:
+    score_line = (
+        f"{summary.away_team} *{summary.away_score}* — "
+        f"{summary.home_team} *{summary.home_score}*"
+    )
+    return [
+        _header(f"🚨 GOAL — {scorer_team}"),
+        _section(f"Scored by *{scorer_name}*\n{score_line}"),
+    ]
+
+
 def build_final_blocks(summary, sport: str) -> list[dict]:
     if summary.home_score > summary.away_score:
         winner = summary.home_team
@@ -130,6 +164,75 @@ def build_final_blocks(summary, sport: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _ordinal(n: int) -> str:
+    return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
+
+
+def _period_end_label(sport: str, period_num: int) -> str:
+    ord_str = _ordinal(period_num)
+    if sport == "basketball":
+        if period_num == 2:
+            return "HALFTIME"
+        if period_num <= 4:
+            return f"END OF {ord_str} QUARTER"
+        return f"END OF OT {period_num - 4}"
+    if sport == "football":
+        if period_num == 2:
+            return "HALFTIME"
+        if period_num <= 4:
+            return f"END OF {ord_str} QUARTER"
+        return "END OF OT"
+    if sport == "hockey":
+        if period_num <= 3:
+            return f"END OF {ord_str} PERIOD"
+        return "END OF OT"
+    if sport == "baseball":
+        return f"END OF {ord_str} INNING"
+    return f"END OF PERIOD {period_num}"
+
+
+def _build_linescore(summary, sport: str, through_period: int, period_scores: dict) -> str:
+    """
+    Monospace linescore table showing per-period scores and totals through through_period.
+    period_scores maps period_num → (cumulative_away, cumulative_home).
+    """
+    periods = sorted(k for k in period_scores if k <= through_period)
+    if not periods:
+        return ""
+
+    # Compute per-period deltas from cumulative scores
+    away_by_p, home_by_p = [], []
+    prev_a = prev_h = 0
+    for p in periods:
+        a, h = period_scores[p]
+        away_by_p.append(a - prev_a)
+        home_by_p.append(h - prev_h)
+        prev_a, prev_h = a, h
+    away_total, home_total = prev_a, prev_h
+
+    # Column headers
+    if sport in ("basketball", "football"):
+        q_labels = {1: "Q1", 2: "Q2", 3: "Q3", 4: "Q4"}
+        col_labels = [q_labels.get(p, f"OT{p - 4}") for p in periods]
+    elif sport == "hockey":
+        col_labels = [f"P{p}" if p <= 3 else "OT" for p in periods]
+    else:
+        col_labels = [str(p) for p in periods]
+    col_labels.append("T")
+
+    col_w = max(len(lb) for lb in col_labels) + 1
+    away_nick = summary.away_abbr or summary.away_team.split()[-1][:3].upper()
+    home_nick = summary.home_abbr or summary.home_team.split()[-1][:3].upper()
+    nick_w = max(len(away_nick), len(home_nick))
+
+    def row(nick, scores, total):
+        cells = [str(s).rjust(col_w) for s in scores] + [str(total).rjust(col_w)]
+        return nick.ljust(nick_w) + "".join(cells)
+
+    header = " " * nick_w + "".join(lb.rjust(col_w) for lb in col_labels)
+    return f"```\n{header}\n{row(away_nick, away_by_p, away_total)}\n{row(home_nick, home_by_p, home_total)}\n```"
+
 
 def _sport_time_label(sport: str) -> str:
     return {
