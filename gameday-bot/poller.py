@@ -5,6 +5,7 @@ from typing import Optional
 import espn
 import db
 import formatter
+import highlights
 import slack_client
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,12 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
 
     log.info("Starting in-game poller for %s (%s/%s)", game_id, sport, league)
 
+    hl_state = None
+    if sport in highlights.SUBREDDITS:
+        row = db.get_game(game_id)
+        if row:
+            hl_state = highlights.init_state(sport, row["home_team"], row["away_team"])
+
     last_period_posted = 0
     last_score_total = 0    # hockey: detect score changes between polls
     last_play_index = 0     # hockey: scan position in plays list
@@ -80,6 +87,13 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
             completed_period, period_scores = result
             _post_period_end(game_id, summary, sport, completed_period, period_scores)
             last_period_posted = completed_period
+
+        # --- Highlights ---
+        if hl_state:
+            try:
+                highlights.check_and_post(game_id, hl_state)
+            except Exception as exc:
+                log.warning("Highlight check failed for %s: %s", game_id, exc)
 
         # --- Game over ---
         if summary.status == "post":
