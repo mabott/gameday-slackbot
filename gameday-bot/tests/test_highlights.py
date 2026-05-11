@@ -78,6 +78,17 @@ class TestIsHighlightPost:
     def test_bracket_case_insensitive(self):
         assert _is_highlight_post(_post(domain="streamable.com", flair="", title="[HIGHLIGHT] Big play"))
 
+    def test_baseball_vredd_accepted_without_flair_or_bracket(self):
+        # r/baseball posts plain v.redd.it clips with no flair or bracket
+        assert _is_highlight_post(_post(domain="v.redd.it", flair="", title="Freeman crushes one to left"), subreddit="baseball")
+
+    def test_baseball_vredd_still_rejected_for_other_subreddits(self):
+        assert not _is_highlight_post(_post(domain="v.redd.it", flair="", title="Some plain clip"), subreddit="nba")
+
+    def test_baseball_non_vredd_still_needs_flair_or_bracket(self):
+        assert not _is_highlight_post(_post(domain="streamable.com", flair="", title="Freeman crushes one"), subreddit="baseball")
+        assert _is_highlight_post(_post(domain="streamable.com", flair="", title="[Highlight] Freeman crushes one"), subreddit="baseball")
+
 
 # ---------------------------------------------------------------------------
 # _team_matches

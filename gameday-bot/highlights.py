@@ -102,7 +102,7 @@ def _team_matches(title: str, state: HighlightState) -> bool:
     )
 
 
-def _is_highlight_post(post: dict) -> bool:
+def _is_highlight_post(post: dict, subreddit: str = "") -> bool:
     """
     True if this Reddit post looks like a game highlight clip.
 
@@ -110,10 +110,18 @@ def _is_highlight_post(post: dict) -> bool:
     streamable/YouTube. We require the post to also carry a Highlight flair
     OR have [Highlight]/[Video] brackets in the title. YouTube links are held
     to the stricter standard of requiring *both*, since podcasts live there too.
+
+    Exception: r/baseball posters routinely skip flair and brackets entirely,
+    uploading game clips as plain v.redd.it posts with a descriptive title.
+    For that subreddit, v.redd.it alone is sufficient — team-name filtering
+    downstream handles false positives.
     """
     flair = (post.get("link_flair_text") or "").lower()
     title_lower = post.get("title", "").lower()
     domain = post.get("domain", "").lower()
+
+    if subreddit == "baseball" and domain == "v.redd.it":
+        return True
 
     flair_match = flair in HIGHLIGHT_FLAIRS
     bracket_match = any(kw in title_lower for kw in HIGHLIGHT_KEYWORDS)
@@ -171,7 +179,7 @@ def scan_new_posts(state: HighlightState) -> list[dict]:
         post_id = post.get("id", "")
         if post_id in state.seen_ids:
             continue
-        if not _is_highlight_post(post):
+        if not _is_highlight_post(post, state.subreddit):
             continue
         if not _team_matches(post.get("title", ""), state):
             continue
