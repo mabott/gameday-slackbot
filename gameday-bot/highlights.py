@@ -22,11 +22,13 @@ import requests
 import db
 import formatter
 import slack_client
+from config import REDDIT_USERNAME
 
 log = logging.getLogger(__name__)
 
 _session = requests.Session()
-_session.headers.update({"User-Agent": "gameday-bot/1.0 (highlight scanner)"})
+_ua = f"script:gameday-bot:v1.0 (by /u/{REDDIT_USERNAME})" if REDDIT_USERNAME else "gameday-bot/1.0"
+_session.headers.update({"User-Agent": _ua})
 
 SUBREDDITS = {
     "basketball": "nba",
