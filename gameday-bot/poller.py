@@ -116,8 +116,8 @@ def _period_scores_from_linescores(home_ls: list, away_ls: list) -> dict:
     result = {}
     home_cum = away_cum = 0
     for i, (h, a) in enumerate(zip(home_ls, away_ls), start=1):
-        home_cum += int(h.get("value", 0) or 0)
-        away_cum += int(a.get("value", 0) or 0)
+        home_cum += int(h.get("displayValue", 0) or 0)
+        away_cum += int(a.get("displayValue", 0) or 0)
         result[i] = (away_cum, home_cum)
     return result
 
