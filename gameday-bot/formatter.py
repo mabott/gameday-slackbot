@@ -87,6 +87,14 @@ def build_midgame_blocks(summary, sport: str) -> list[dict]:
     return blocks
 
 
+def build_espn_highlight_blocks(video: dict) -> list[dict]:
+    headline = video.get("headline", "")
+    url = video.get("links", {}).get("web", {}).get("href", "")
+    secs = video.get("duration", 0)
+    duration = f"{secs // 60}:{secs % 60:02d}"
+    return [_section(f"📺 *{headline}*\n{url}\n_ESPN · {duration}_")]
+
+
 def build_highlight_blocks(post: dict) -> list[dict]:
     title = post.get("title", "")
     url = post.get("url", "")

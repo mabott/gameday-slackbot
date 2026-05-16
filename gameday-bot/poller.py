@@ -8,6 +8,7 @@ import db
 import formatter
 import highlights
 import slack_client
+from config import ESPN_HIGHLIGHTS, REDDIT_HIGHLIGHTS
 
 log = logging.getLogger(__name__)
 
@@ -65,10 +66,12 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
     log.info("Starting in-game poller for %s (%s/%s)", game_id, sport, league)
 
     hl_state = None
-    if sport in highlights.SUBREDDITS:
+    if REDDIT_HIGHLIGHTS and sport in highlights.SUBREDDITS:
         row = db.get_game(game_id)
         if row:
             hl_state = highlights.init_state(sport, row["home_team"], row["away_team"])
+
+    espn_seen_ids: set = set()
 
     last_period_posted = 0
     last_score_total = 0    # hockey: detect score changes between polls
@@ -107,11 +110,17 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
             last_period_posted = completed_period
 
         # --- Highlights ---
+        if ESPN_HIGHLIGHTS:
+            try:
+                highlights.check_and_post_espn(game_id, summary.videos, espn_seen_ids)
+            except Exception as exc:
+                log.warning("ESPN highlight check failed for %s: %s", game_id, exc)
+
         if hl_state:
             try:
                 highlights.check_and_post(game_id, hl_state)
             except Exception as exc:
-                log.warning("Highlight check failed for %s: %s", game_id, exc)
+                log.warning("Reddit highlight check failed for %s: %s", game_id, exc)
 
         # --- Game over ---
         if summary.status == "post":

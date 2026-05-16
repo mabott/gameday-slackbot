@@ -12,6 +12,7 @@ Run standalone for testing:
 
 import argparse
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -22,13 +23,21 @@ import requests
 import db
 import formatter
 import slack_client
-from config import REDDIT_USERNAME
+from config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD
 
 log = logging.getLogger(__name__)
 
 _session = requests.Session()
 _ua = f"script:gameday-bot:v1.0 (by /u/{REDDIT_USERNAME})" if REDDIT_USERNAME else "gameday-bot/1.0"
 _session.headers.update({"User-Agent": _ua})
+
+# OAuth token state — refreshed automatically when expired
+_token: Optional[str] = None
+_token_expiry: float = 0.0
+_token_lock = threading.Lock()
+
+REDDIT_BASE = "https://www.reddit.com"
+REDDIT_OAUTH_BASE = "https://oauth.reddit.com"
 
 SUBREDDITS = {
     "basketball": "nba",
@@ -49,8 +58,6 @@ HIGHLIGHT_DOMAINS = {
     "gfycat.com",
     "clips.twitch.tv",
 }
-
-REDDIT_BASE = "https://www.reddit.com"
 
 
 @dataclass
@@ -75,11 +82,54 @@ def init_state(sport: str, home_team: str, away_team: str) -> HighlightState:
     )
 
 
+def _get_oauth_token() -> Optional[str]:
+    """Fetch or reuse a Reddit OAuth token. Returns None if credentials are not configured."""
+    global _token, _token_expiry
+    if not all([REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD]):
+        return None
+    with _token_lock:
+        if _token and time.time() < _token_expiry - 60:
+            return _token
+        try:
+            resp = requests.post(
+                f"{REDDIT_BASE}/api/v1/access_token",
+                auth=(REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET),
+                data={"grant_type": "password", "username": REDDIT_USERNAME, "password": REDDIT_PASSWORD},
+                headers={"User-Agent": _ua},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            _token = data["access_token"]
+            _token_expiry = time.time() + data.get("expires_in", 3600)
+            log.info("Reddit OAuth token acquired (expires in %ds)", data.get("expires_in", 3600))
+            return _token
+        except Exception as exc:
+            log.warning("Reddit OAuth token fetch failed: %s", exc)
+            return None
+
+
 def _reddit_get(path: str, params: dict = None, retries: int = 3) -> Optional[dict]:
-    url = f"{REDDIT_BASE}{path}"
+    global _token
+    token = _get_oauth_token()
+    if token:
+        url = f"{REDDIT_OAUTH_BASE}{path}"
+        extra_headers = {"Authorization": f"bearer {token}"}
+    else:
+        url = f"{REDDIT_BASE}{path}"
+        extra_headers = {}
+
     for attempt in range(retries):
         try:
-            resp = _session.get(url, params=params, timeout=10)
+            resp = _session.get(url, params=params, headers=extra_headers, timeout=10)
+            if resp.status_code == 401 and token:
+                # Token expired mid-flight — clear it and retry once with a fresh one
+                log.warning("Reddit token expired mid-request, refreshing")
+                with _token_lock:
+                    _token = None
+                token = _get_oauth_token()
+                extra_headers = {"Authorization": f"bearer {token}"} if token else {}
+                continue
             if resp.status_code == 429:
                 log.warning("Reddit rate limit hit, sleeping 10s")
                 time.sleep(10)
@@ -195,6 +245,32 @@ def scan_new_posts(state: HighlightState) -> list[dict]:
         log.info("New highlight: [%s] %s", post.get("domain", ""), post.get("title", "")[:80])
 
     return found
+
+
+def check_and_post_espn(game_id: str, videos: list, seen_ids: set):
+    """
+    Post any ESPN highlight clips not yet seen. `seen_ids` is mutated in place
+    (caller owns it and passes the same set each iteration to prevent reposts).
+    Called each iteration of poll_in_game_updates() with summary.videos.
+    """
+    if not videos:
+        return
+    row = db.get_game(game_id)
+    if not row:
+        return
+    thread_ts = row.get("slack_ts")
+    if not thread_ts:
+        return
+
+    for video in videos:
+        vid_id = video.get("id")
+        if not vid_id or vid_id in seen_ids:
+            continue
+        seen_ids.add(vid_id)
+        blocks = formatter.build_espn_highlight_blocks(video)
+        headline = video.get("headline", "")
+        slack_client.post_reply(blocks=blocks, text=f"Highlight: {headline}", thread_ts=thread_ts)
+        log.info("ESPN highlight posted for game %s: %s", game_id, headline[:60])
 
 
 def check_and_post(game_id: str, state: HighlightState):

@@ -300,3 +300,97 @@ def test_build_highlight_blocks_shows_author_and_domain():
     text = formatter.build_highlight_blocks(post)[0]["text"]["text"]
     assert "nba_fan" in text
     assert "streamable.com" in text
+
+
+# ---------------------------------------------------------------------------
+# build_espn_highlight_blocks (formatter)
+# ---------------------------------------------------------------------------
+
+def _espn_video(
+    vid_id=48746528,
+    headline="LeBron comes over to block Hartenstein",
+    duration=20,
+    url="https://www.espn.com/video/clip/_/id/48746528/lebron-block",
+):
+    return {
+        "id": vid_id,
+        "headline": headline,
+        "duration": duration,
+        "links": {"web": {"href": url}},
+    }
+
+
+def test_build_espn_highlight_blocks_contains_headline():
+    text = formatter.build_espn_highlight_blocks(_espn_video())[0]["text"]["text"]
+    assert "LeBron comes over to block Hartenstein" in text
+
+
+def test_build_espn_highlight_blocks_contains_url():
+    text = formatter.build_espn_highlight_blocks(_espn_video())[0]["text"]["text"]
+    assert "espn.com/video" in text
+
+
+def test_build_espn_highlight_blocks_formats_duration():
+    text = formatter.build_espn_highlight_blocks(_espn_video(duration=83))[0]["text"]["text"]
+    assert "1:23" in text
+
+
+def test_build_espn_highlight_blocks_short_clip():
+    text = formatter.build_espn_highlight_blocks(_espn_video(duration=9))[0]["text"]["text"]
+    assert "0:09" in text
+
+
+# ---------------------------------------------------------------------------
+# check_and_post_espn
+# ---------------------------------------------------------------------------
+
+def test_check_and_post_espn_skips_when_no_game(tmp_db):
+    seen = set()
+    highlights.check_and_post_espn("no-such-game", [_espn_video()], seen)
+    assert len(seen) == 0
+
+
+def test_check_and_post_espn_skips_when_no_slack_ts(tmp_db):
+    db.upsert_game(
+        game_id="g10", sport="basketball",
+        home_team="Los Angeles Lakers", away_team="Oklahoma City Thunder",
+        start_time_iso="2026-05-11T20:00:00+00:00", date="2026-05-11",
+    )
+    seen = set()
+    with patch("slack_client.post_reply") as mock_reply:
+        highlights.check_and_post_espn("g10", [_espn_video()], seen)
+    mock_reply.assert_not_called()
+
+
+def test_check_and_post_espn_posts_new_videos(tmp_db):
+    db.upsert_game(
+        game_id="g11", sport="basketball",
+        home_team="Los Angeles Lakers", away_team="Oklahoma City Thunder",
+        start_time_iso="2026-05-11T20:00:00+00:00", date="2026-05-11",
+    )
+    db.save_slack_ts("g11", "111.222")
+    seen = set()
+    videos = [_espn_video(vid_id=1), _espn_video(vid_id=2, headline="Second play")]
+    with patch("slack_client.post_reply") as mock_reply:
+        highlights.check_and_post_espn("g11", videos, seen)
+    assert mock_reply.call_count == 2
+    assert seen == {1, 2}
+
+
+def test_check_and_post_espn_skips_already_seen(tmp_db):
+    db.upsert_game(
+        game_id="g12", sport="basketball",
+        home_team="Los Angeles Lakers", away_team="Oklahoma City Thunder",
+        start_time_iso="2026-05-11T20:00:00+00:00", date="2026-05-11",
+    )
+    db.save_slack_ts("g12", "111.333")
+    seen = {1}  # already seen video 1
+    with patch("slack_client.post_reply") as mock_reply:
+        highlights.check_and_post_espn("g12", [_espn_video(vid_id=1)], seen)
+    mock_reply.assert_not_called()
+
+
+def test_check_and_post_espn_empty_videos(tmp_db):
+    seen = set()
+    highlights.check_and_post_espn("g-any", [], seen)
+    assert len(seen) == 0

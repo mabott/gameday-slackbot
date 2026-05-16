@@ -60,6 +60,7 @@ class GameSummary:
     injuries: list = field(default_factory=list)
     plays: list = field(default_factory=list)
     broadcasts: list = field(default_factory=list)
+    videos: list = field(default_factory=list)
 
 
 @dataclass
@@ -386,6 +387,7 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         injuries=injuries,
         plays=data.get("plays", []),
         broadcasts=broadcasts,
+        videos=data.get("videos", []),
     )
 
 
