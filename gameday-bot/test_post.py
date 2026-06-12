@@ -5,6 +5,7 @@ Immediately fire pre-game, mid-game, and final posts for a real or synthetic gam
 Usage:
     python3 test_post.py                             # synthetic NFL game, all three posts
     python3 test_post.py --sport basketball          # synthetic NBA game
+    python3 test_post.py --sport soccer              # synthetic World Cup game
     python3 test_post.py --team "LA Lakers"          # find next real Lakers game
     python3 test_post.py --team "LA Lakers" --historical  # use a real completed Lakers game
     python3 test_post.py --stage pre                 # only the pre-game post
@@ -161,6 +162,45 @@ _SYNTHETIC = {
             },
         ),
     },
+    "soccer": {
+        "game": dict(
+            sport="soccer", league="fifa.world",
+            home_team="Mexico", away_team="United States",
+            home_team_id="203", away_team_id="660",
+            home_abbr="MEX", away_abbr="USA",
+            broadcasts=["FOX", "Telemundo"],
+        ),
+        "mid": dict(
+            period="HT", home_score=0, away_score=0,
+            home_record="1-0-0", away_record="1-0-0",
+            leaders=[],
+            soccer_stats={
+                "home": {"team": "{home}", "stats": {
+                    "possessionPct": "54.0", "totalShots": "7", "shotsOnTarget": "2",
+                    "wonCorners": "3", "saves": "2", "yellowCards": "0", "redCards": "0",
+                }},
+                "away": {"team": "{away}", "stats": {
+                    "possessionPct": "46.0", "totalShots": "5", "shotsOnTarget": "3",
+                    "wonCorners": "2", "saves": "2", "yellowCards": "1", "redCards": "0",
+                }},
+            },
+        ),
+        "final": dict(
+            period="FT", home_score=0, away_score=1,
+            home_record="1-0-1", away_record="2-0-0",
+            leaders=[],
+            soccer_stats={
+                "home": {"team": "{home}", "stats": {
+                    "possessionPct": "52.0", "totalShots": "12", "shotsOnTarget": "3",
+                    "wonCorners": "5", "saves": "3", "yellowCards": "2", "redCards": "0",
+                }},
+                "away": {"team": "{away}", "stats": {
+                    "possessionPct": "48.0", "totalShots": "9", "shotsOnTarget": "4",
+                    "wonCorners": "4", "saves": "3", "yellowCards": "1", "redCards": "0",
+                }},
+            },
+        ),
+    },
 }
 
 
@@ -177,12 +217,14 @@ def _resolve(val, home: str, away: str):
 
 def _make_synthetic_game(sport: str) -> Game:
     data = _SYNTHETIC.get(sport, _SYNTHETIC["football"])["game"]
+    # home_abbr/away_abbr are not Game fields; strip them before unpacking
+    game_data = {k: v for k, v in data.items() if k not in ("home_abbr", "away_abbr")}
     return Game(
         game_id=f"test-synthetic-{sport}",
         start_time=datetime.now(timezone.utc) + timedelta(hours=1),
         status="pre",
         series_context=None,
-        **data,
+        **game_data,
     )
 
 
@@ -190,6 +232,7 @@ def _make_synthetic_summary(game: Game, stage: str) -> GameSummary:
     sport_data = _SYNTHETIC.get(game.sport, _SYNTHETIC["football"])
     tmpl = copy.deepcopy(sport_data[stage])
     home, away = game.home_team, game.away_team
+    game_meta = sport_data["game"]
     return GameSummary(
         game_id=game.game_id,
         status="in" if stage == "mid" else "post",
@@ -203,6 +246,9 @@ def _make_synthetic_summary(game: Game, stage: str) -> GameSummary:
         leaders=_resolve(tmpl.get("leaders", []), home, away),
         goalie_saves=_resolve(tmpl.get("goalie_saves", {}), home, away),
         series_context=game.series_context,
+        home_abbr=game_meta.get("home_abbr", ""),
+        away_abbr=game_meta.get("away_abbr", ""),
+        soccer_stats=_resolve(tmpl.get("soccer_stats", {}), home, away),
     )
 
 
@@ -431,7 +477,7 @@ def main():
     )
     parser.add_argument(
         "--sport",
-        choices=["football", "basketball", "baseball", "hockey"],
+        choices=["football", "basketball", "baseball", "hockey", "soccer"],
         default="football",
         help="Sport for synthetic game when no --team is given (default: football)",
     )
