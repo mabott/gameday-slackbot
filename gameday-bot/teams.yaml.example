@@ -63,3 +63,12 @@ teams:
   - name: Seattle Kraken
     sport: hockey
     league: nhl
+
+  # 2026 FIFA World Cup
+  - name: United States
+    sport: soccer
+    league: fifa.world
+
+  - name: Mexico
+    sport: soccer
+    league: fifa.world
