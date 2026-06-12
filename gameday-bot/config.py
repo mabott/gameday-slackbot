@@ -22,8 +22,8 @@ ESPN_ID_CACHE_PATH = os.environ.get("ESPN_ID_CACHE_PATH", "espn_ids.json")
 
 TEAMS_FILE = os.environ.get("TEAMS_FILE", str(Path(__file__).parent / "teams.yaml"))
 
-VALID_SPORTS = {"basketball", "baseball", "football", "hockey"}
-VALID_LEAGUES = {"nba", "mlb", "nfl", "nhl"}
+VALID_SPORTS = {"basketball", "baseball", "football", "hockey", "soccer"}
+VALID_LEAGUES = {"nba", "mlb", "nfl", "nhl", "fifa.world"}
 
 
 def _load_teams(path: str) -> tuple[list[dict], dict]:
@@ -94,6 +94,7 @@ SPORT_EMOJIS = {
     "basketball": "🏀",
     "baseball": "⚾",
     "hockey": "🏒",
+    "soccer": "⚽",
 }
 
 ODDS_SPORT_KEYS = {
