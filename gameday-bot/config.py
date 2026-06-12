@@ -11,6 +11,12 @@ log = logging.getLogger(__name__)
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_CHANNEL_ID = os.environ.get("SLACK_CHANNEL_ID", "")
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
+REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "")
+REDDIT_USERNAME = os.environ.get("REDDIT_USERNAME", "")
+REDDIT_PASSWORD = os.environ.get("REDDIT_PASSWORD", "")
+ESPN_HIGHLIGHTS = os.environ.get("ESPN_HIGHLIGHTS", "true").lower() == "true"
+REDDIT_HIGHLIGHTS = os.environ.get("REDDIT_HIGHLIGHTS", "true").lower() == "true"
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 TZ = os.environ.get("TZ", "America/Los_Angeles")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")

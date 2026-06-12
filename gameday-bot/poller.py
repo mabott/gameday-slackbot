@@ -1,13 +1,29 @@
 import logging
+import threading
 import time
 from typing import Optional
 
 import espn
 import db
 import formatter
+import highlights
 import slack_client
+from config import ESPN_HIGHLIGHTS, REDDIT_HIGHLIGHTS
 
 log = logging.getLogger(__name__)
+
+_stop = threading.Event()
+
+
+def request_stop():
+    """Signal all active pollers to exit at their next sleep boundary."""
+    _stop.set()
+
+
+def _sleep(seconds: float):
+    """Sleep for up to `seconds`, waking immediately if stop is requested."""
+    _stop.wait(timeout=seconds)
+
 
 MAX_IN_GAME_POLLS = 72  # 72 × 5 min average = ~6 hrs before giving up
 
@@ -50,6 +66,14 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
 
     log.info("Starting in-game poller for %s (%s/%s)", game_id, sport, league)
 
+    hl_state = None
+    if REDDIT_HIGHLIGHTS and sport in highlights.SUBREDDITS:
+        row = db.get_game(game_id)
+        if row:
+            hl_state = highlights.init_state(sport, row["home_team"], row["away_team"])
+
+    espn_seen_ids: set = set()
+
     last_period_posted = 0
     last_score_total = 0    # hockey/soccer: detect score changes between polls
     last_play_index = 0     # hockey: scan position in plays list
@@ -57,9 +81,13 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
     last_bottom_inning = 0  # baseball: last inning where bottom half was observed
 
     for attempt in range(MAX_IN_GAME_POLLS):
+        if _stop.is_set():
+            log.info("Stop requested, exiting in-game poller for %s", game_id)
+            return
+
         summary = espn.get_game_summary(sport, league, game_id)
         if not summary:
-            time.sleep(60)
+            _sleep(60)
             continue
 
         # --- Hockey: goal alert on score change ---
@@ -100,6 +128,19 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
             _post_period_end(game_id, summary, sport, completed_period, period_scores)
             last_period_posted = completed_period
 
+        # --- Highlights ---
+        if ESPN_HIGHLIGHTS:
+            try:
+                highlights.check_and_post_espn(game_id, summary.videos, espn_seen_ids)
+            except Exception as exc:
+                log.warning("ESPN highlight check failed for %s: %s", game_id, exc)
+
+        if hl_state:
+            try:
+                highlights.check_and_post(game_id, hl_state)
+            except Exception as exc:
+                log.warning("Reddit highlight check failed for %s: %s", game_id, exc)
+
         # --- Game over ---
         if summary.status == "post":
             log.info("Game %s is final after %d poll(s)", game_id, attempt + 1)
@@ -108,7 +149,7 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
 
         # --- Sleep ---
         fixed = _FIXED_SLEEP.get(sport)
-        time.sleep(fixed if fixed else _sleep_for_clock(summary.clock_secs))
+        _sleep(fixed if fixed else _sleep_for_clock(summary.clock_secs))
 
     log.warning("In-game poller timed out for %s after %d attempts", game_id, MAX_IN_GAME_POLLS)
 

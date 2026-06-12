@@ -87,6 +87,26 @@ def build_midgame_blocks(summary, sport: str) -> list[dict]:
     return blocks
 
 
+def build_espn_highlight_blocks(video: dict) -> list[dict]:
+    headline = video.get("headline", "")
+    url = video.get("links", {}).get("web", {}).get("href", "")
+    secs = video.get("duration", 0)
+    duration = f"{secs // 60}:{secs % 60:02d}"
+    return [_section(f"📺 *{headline}*\n{url}\n_ESPN · {duration}_")]
+
+
+def build_highlight_blocks(post: dict) -> list[dict]:
+    title = post.get("title", "")
+    url = post.get("url", "")
+    domain = post.get("domain", "")
+    score = post.get("score", 0)
+    author = post.get("author", "")
+    source = f"via u/{author} on Reddit ({domain})"
+    if score > 0:
+        source += f" · {score} upvotes"
+    return [_section(f"🎬 *{title}*\n{url}\n_{source}_")]
+
+
 def build_period_end_blocks(summary, sport: str, period_num: int, period_scores: dict) -> list[dict]:
     emoji = SPORT_EMOJIS.get(sport, "🏟️")
     label = _period_end_label(sport, period_num)
