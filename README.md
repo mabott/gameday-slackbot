@@ -1,8 +1,8 @@
 # Gameday Slackbot
 
-Posts game day threads to a Slack channel for a configured set of sports teams. Each game gets one top-level message ~60 minutes before tip-off, a mid-game update at halftime/intermission, and a final recap once the game ends — all threaded to keep the channel clean.
+Posts game day threads to a Slack channel for a configured set of sports teams. Each game gets one top-level message ~60 minutes before kickoff/tip-off, period-end updates with linescores and stats, and a final recap once the game ends — all threaded to keep the channel clean.
 
-Supports NFL, NBA, MLB, and NHL. Teams are configured in `teams.yaml` — no code changes required to add or remove teams.
+Supports NFL, NBA, MLB, NHL, and the FIFA World Cup. Teams are configured in `teams.yaml` — no code changes required to add or remove teams.
 
 ---
 
@@ -30,9 +30,21 @@ Then fill in the values (see API Keys below).
 cp gameday-bot/teams.yaml.example gameday-bot/teams.yaml
 ```
 
-Edit `teams.yaml` to add or remove teams. Each entry needs a `name`, `sport`, and `league`. NFL and MLB teams playing in outdoor stadiums should also include `stadium_coords` for weather data. See the example file for the full format.
+Edit `teams.yaml` to add or remove teams. Each entry needs a `name`, `sport`, and `league`:
+
+| Sport | `sport` value | `league` value |
+|---|---|---|
+| NFL | `football` | `nfl` |
+| NBA | `basketball` | `nba` |
+| MLB | `baseball` | `mlb` |
+| NHL | `hockey` | `nhl` |
+| FIFA World Cup | `soccer` | `fifa.world` |
+
+NFL and MLB teams playing in outdoor stadiums should also include `stadium_coords` for weather data. Soccer teams don't need `stadium_coords` (World Cup games are spread across multiple venues).
 
 Teams with identical nicknames in different leagues (Kings, Giants, Cardinals, etc.) are safe — the bot matches each team within its own sport/league bucket.
+
+**Note:** After adding new teams, delete `gameday-bot/espn_ids.json` (or run `python3 bot.py --refresh-ids`) so ESPN IDs are re-discovered.
 
 ### 4. SSL certificates (macOS only)
 
@@ -106,7 +118,7 @@ cd gameday-bot && python3 test_post.py --delay 10                  # 10s between
 
 ### Force ESPN ID cache refresh
 
-If team IDs look stale or a new team was added, force re-discovery and exit:
+Required after adding or removing teams from `teams.yaml`. Force re-discovery and exit:
 
 ```bash
 cd gameday-bot && python3 bot.py --refresh-ids
