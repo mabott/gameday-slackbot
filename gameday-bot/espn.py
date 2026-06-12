@@ -61,6 +61,8 @@ class GameSummary:
     plays: list = field(default_factory=list)
     broadcasts: list = field(default_factory=list)
     videos: list = field(default_factory=list)
+    key_events: list = field(default_factory=list)
+    soccer_stats: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -196,7 +198,10 @@ def get_games_for_date(
     if not data:
         return []
 
-    _COMPLETE = ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
+    _COMPLETE = (
+        "STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY",
+        "STATUS_FULL_TIME", "STATUS_FINAL_AET", "STATUS_FINAL_PENS",
+    )
 
     games = []
     for event in data.get("events", []):
@@ -363,7 +368,25 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
     ]
     broadcasts = [b for b in broadcasts if b]
 
-    is_final = status_name in ("STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY")
+    is_final = status_name in (
+        "STATUS_FINAL", "STATUS_FINAL_OT", "STATUS_FINAL_PENALTY",
+        "STATUS_FULL_TIME", "STATUS_FINAL_AET", "STATUS_FINAL_PENS",
+    )
+
+    # Soccer: extract per-team stats from boxscore (all stats use displayValue)
+    soccer_stats: dict = {}
+    if sport == "soccer":
+        for team_data in boxscore.get("teams", []):
+            side = team_data.get("homeAway", "")
+            team_stats = {
+                s.get("name", ""): s.get("displayValue", "") or str(s.get("value", "") or "")
+                for s in team_data.get("statistics", [])
+                if s.get("name")
+            }
+            soccer_stats[side] = {
+                "team": team_data.get("team", {}).get("displayName", ""),
+                "stats": team_stats,
+            }
 
     return GameSummary(
         game_id=event_id,
@@ -388,6 +411,8 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         plays=data.get("plays", []),
         broadcasts=broadcasts,
         videos=data.get("videos", []),
+        key_events=data.get("keyEvents", []),
+        soccer_stats=soccer_stats,
     )
 
 
@@ -426,6 +451,33 @@ def last_goal_from_plays(plays: list, after_index: int) -> Optional[dict]:
                 "team": play.get("team", {}).get("displayName", ""),
                 "play_index": i,
             }
+    return None
+
+
+def last_goal_from_keyevents(key_events: list, after_index: int) -> Optional[dict]:
+    """
+    Scan key_events[after_index:] for a soccer scoring play.
+    Returns a dict with scorer, team, clock, description, and event_index, or None.
+    """
+    for i in range(after_index, len(key_events)):
+        event = key_events[i]
+        if not event.get("scoringPlay"):
+            continue
+        team_obj = event.get("team") or {}
+        team = team_obj.get("displayName", "") if isinstance(team_obj, dict) else ""
+        participants = event.get("participants") or []
+        scorer = (
+            participants[0].get("athlete", {}).get("displayName", "Unknown")
+            if participants else "Unknown"
+        )
+        clock = (event.get("clock") or {}).get("displayValue", "")
+        return {
+            "scorer": scorer,
+            "team": team,
+            "clock": clock,
+            "description": event.get("text", "") or "",
+            "event_index": i,
+        }
     return None
 
 

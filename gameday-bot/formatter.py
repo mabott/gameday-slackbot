@@ -130,31 +130,48 @@ def build_period_end_blocks(summary, sport: str, period_num: int, period_scores:
     return blocks
 
 
-def build_goal_alert_blocks(summary, scorer_name: str, scorer_team: str) -> list[dict]:
+def build_goal_alert_blocks(
+    summary, scorer_name: str, scorer_team: str,
+    clock: str = "", description: str = "",
+) -> list[dict]:
     score_line = (
         f"{summary.away_team} *{summary.away_score}* — "
         f"{summary.home_team} *{summary.home_score}*"
     )
+    if description:
+        # Soccer: use ESPN's rich event text and ⚽ emoji
+        header_text = f"⚽ GOAL — {scorer_team} ({clock})" if clock else f"⚽ GOAL — {scorer_team}"
+        body = f"{description}\n{score_line}"
+    else:
+        # Hockey: original behaviour
+        header_text = f"🚨 GOAL — {scorer_team}"
+        body = f"Scored by *{scorer_name}*\n{score_line}"
     return [
-        _header(f"🚨 GOAL — {scorer_team}"),
-        _section(f"Scored by *{scorer_name}*\n{score_line}"),
+        _header(header_text),
+        _section(body),
     ]
 
 
 def build_final_blocks(summary, sport: str) -> list[dict]:
     if summary.home_score > summary.away_score:
         winner = summary.home_team
-    else:
+    elif summary.away_score > summary.home_score:
         winner = summary.away_team
+    else:
+        winner = None  # draw
 
-    verb = "win" if winner.rstrip("!").endswith("s") else "wins"
+    if winner:
+        verb = "win" if winner.rstrip("!").endswith("s") else "wins"
+        result_line = f"*{winner} {verb}!*"
+    else:
+        result_line = "*Draw!*"
 
     blocks = [
         _header(
             f"🏁 FINAL: {summary.away_team} {summary.away_score} — "
             f"{summary.home_team} {summary.home_score}"
         ),
-        _section(f"*{winner} {verb}!*"),
+        _section(result_line),
     ]
 
     performers = _build_top_performers(summary, sport)
@@ -197,6 +214,16 @@ def _period_end_label(sport: str, period_num: int) -> str:
         return "END OF OT"
     if sport == "baseball":
         return f"END OF {ord_str} INNING"
+    if sport == "soccer":
+        if period_num == 1:
+            return "HALFTIME"
+        if period_num == 2:
+            return "FULL TIME"
+        if period_num == 3:
+            return "END OF ET (1ST HALF)"
+        if period_num == 4:
+            return "FULL TIME (AET)"
+        return f"END OF PERIOD {period_num}"
     return f"END OF PERIOD {period_num}"
 
 
@@ -225,6 +252,9 @@ def _build_linescore(summary, sport: str, through_period: int, period_scores: di
         col_labels = [q_labels.get(p, f"OT{p - 4}") for p in periods]
     elif sport == "hockey":
         col_labels = [f"P{p}" if p <= 3 else "OT" for p in periods]
+    elif sport == "soccer":
+        h_labels = {1: "H1", 2: "H2", 3: "ET1", 4: "ET2"}
+        col_labels = [h_labels.get(p, f"P{p}") for p in periods]
     else:
         col_labels = [str(p) for p in periods]
     col_labels.append("T")
@@ -248,6 +278,7 @@ def _sport_time_label(sport: str) -> str:
         "basketball": "Tip-off",
         "baseball": "First pitch",
         "hockey": "Puck drop",
+        "soccer": "Kickoff",
     }.get(sport, "Start")
 
 
@@ -260,10 +291,60 @@ def _period_label(sport: str, period_text: str) -> str:
         return "END OF 2ND PERIOD"
     if sport == "baseball":
         return f"MID-GAME ({period_text})"
+    if sport == "soccer":
+        return "HALFTIME"
     return "MID-GAME"
 
 
+def _build_soccer_stats(summary, include_cards: bool = False) -> str:
+    """Possession, shots, corners, saves — one line per team. Cards optional (for final)."""
+    stats = summary.soccer_stats
+    if not stats:
+        return ""
+    lines = []
+    for side in ("away", "home"):
+        team_data = stats.get(side, {})
+        s = team_data.get("stats", {})
+        abbr = summary.away_abbr if side == "away" else summary.home_abbr
+        team_name = summary.away_team if side == "away" else summary.home_team
+        nick = abbr or team_name.split()[-1][:3].upper()
+
+        parts = []
+        poss = s.get("possessionPct", "")
+        if poss:
+            try:
+                parts.append(f"{round(float(poss))}% poss")
+            except (ValueError, TypeError):
+                pass
+        total_shots = s.get("totalShots", "")
+        on_tgt = s.get("shotsOnTarget", "")
+        if total_shots:
+            parts.append(f"{total_shots} shots ({on_tgt} on tgt)" if on_tgt else f"{total_shots} shots")
+        corners = s.get("wonCorners", "")
+        if corners:
+            parts.append(f"{corners} corner" if corners == "1" else f"{corners} corners")
+        saves = s.get("saves", "")
+        if saves:
+            parts.append(f"{saves} saves")
+        if include_cards:
+            yellows = s.get("yellowCards", "0")
+            reds = s.get("redCards", "0")
+            card_parts = []
+            if int(yellows or 0) > 0:
+                card_parts.append(f"{yellows}🟨")
+            if int(reds or 0) > 0:
+                card_parts.append(f"{reds}🟥")
+            if card_parts:
+                parts.append(" ".join(card_parts))
+        if parts:
+            lines.append(f"*{nick}:* " + " | ".join(parts))
+    return "\n".join(lines)
+
+
 def _build_stat_line(summary, sport: str) -> str:
+    if sport == "soccer":
+        return _build_soccer_stats(summary)
+
     leaders = summary.leaders
     if not leaders:
         return ""
@@ -308,6 +389,9 @@ def _build_stat_line(summary, sport: str) -> str:
 
 
 def _build_top_performers(summary, sport: str) -> str:
+    if sport == "soccer":
+        return _build_soccer_stats(summary, include_cards=True)
+
     leaders = summary.leaders
     if not leaders:
         return ""

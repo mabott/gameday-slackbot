@@ -32,6 +32,7 @@ MAX_IN_GAME_POLLS = 72  # 72 × 5 min average = ~6 hrs before giving up
 _FIXED_SLEEP = {
     "hockey": 60,
     "baseball": 180,
+    "soccer": 60,
 }
 
 
@@ -74,8 +75,9 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
     espn_seen_ids: set = set()
 
     last_period_posted = 0
-    last_score_total = 0    # hockey: detect score changes between polls
+    last_score_total = 0    # hockey/soccer: detect score changes between polls
     last_play_index = 0     # hockey: scan position in plays list
+    last_key_event_index = 0  # soccer: scan position in keyEvents list
     last_bottom_inning = 0  # baseball: last inning where bottom half was observed
 
     for attempt in range(MAX_IN_GAME_POLLS):
@@ -96,6 +98,23 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
                 if goal:
                     last_play_index = goal["play_index"] + 1
                     _post_goal_alert(game_id, summary, goal["scorer"], goal["team"])
+                last_score_total = current_total
+
+        # --- Soccer: goal alert on score change via keyEvents ---
+        if sport == "soccer":
+            current_total = summary.home_score + summary.away_score
+            if current_total > last_score_total:
+                idx = last_key_event_index
+                while True:
+                    goal = espn.last_goal_from_keyevents(summary.key_events, idx)
+                    if not goal:
+                        break
+                    idx = goal["event_index"] + 1
+                    _post_goal_alert(
+                        game_id, summary, goal["scorer"], goal["team"],
+                        clock=goal["clock"], description=goal["description"],
+                    )
+                last_key_event_index = idx
                 last_score_total = current_total
 
         # --- Baseball: record each bottom half we observe ---
@@ -139,12 +158,15 @@ def _period_scores_from_linescores(home_ls: list, away_ls: list) -> dict:
     """
     Convert ESPN per-period linescores into the cumulative format expected by
     _build_linescore: {period_num: (cumulative_away, cumulative_home)}.
+    Soccer linescores use displayValue (string); other sports use value (number).
     """
     result = {}
     home_cum = away_cum = 0
     for i, (h, a) in enumerate(zip(home_ls, away_ls), start=1):
-        home_cum += int(h.get("displayValue", 0) or 0)
-        away_cum += int(a.get("displayValue", 0) or 0)
+        hv = h.get("value") if h.get("value") is not None else h.get("displayValue", 0)
+        av = a.get("value") if a.get("value") is not None else a.get("displayValue", 0)
+        home_cum += int(hv or 0)
+        away_cum += int(av or 0)
         result[i] = (away_cum, home_cum)
     return result
 
@@ -203,7 +225,10 @@ def _post_period_end(game_id: str, summary, sport: str, period_num: int, period_
     log.info("Period %d end posted for %s", period_num, game_id)
 
 
-def _post_goal_alert(game_id: str, summary, scorer_name: str, scorer_team: str):
+def _post_goal_alert(
+    game_id: str, summary, scorer_name: str, scorer_team: str,
+    clock: str = "", description: str = "",
+):
     row = db.get_game(game_id)
     if not row:
         return
@@ -211,8 +236,12 @@ def _post_goal_alert(game_id: str, summary, scorer_name: str, scorer_team: str):
     if not thread_ts:
         return
 
-    blocks = formatter.build_goal_alert_blocks(summary, scorer_name, scorer_team)
+    blocks = formatter.build_goal_alert_blocks(
+        summary, scorer_name, scorer_team, clock=clock, description=description
+    )
     text = f"Goal — {scorer_team}: {scorer_name}"
+    if clock:
+        text += f" ({clock})"
     slack_client.post_reply(blocks=blocks, text=text, thread_ts=thread_ts)
     log.info("Goal alert posted for %s (scorer: %s)", game_id, scorer_name)
 

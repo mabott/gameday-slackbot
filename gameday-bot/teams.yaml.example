@@ -4,12 +4,13 @@
 #
 # Required fields:
 #   name:   Full team name as ESPN displays it (used for matching)
-#   sport:  basketball | baseball | football | hockey
-#   league: nba | mlb | nfl | nhl
+#   sport:  basketball | baseball | football | hockey | soccer
+#   league: nba | mlb | nfl | nhl | fifa.world
 #
 # Optional fields:
 #   stadium_coords: [lat, lon]  — outdoor venues only (NFL/MLB).
 #                                 Omit or set to null for indoor/retractable-roof venues.
+#                                 Not used for soccer (multi-venue tournament).
 #
 # Disambiguation: teams with identical nicknames in different leagues (Kings, Giants,
 # Cardinals, etc.) are safe as long as sport+league differ. The bot matches each team
@@ -62,3 +63,12 @@ teams:
   - name: Seattle Kraken
     sport: hockey
     league: nhl
+
+  # 2026 FIFA World Cup
+  - name: United States
+    sport: soccer
+    league: fifa.world
+
+  - name: Mexico
+    sport: soccer
+    league: fifa.world
