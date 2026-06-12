@@ -136,12 +136,17 @@ class TestTeamMatches:
 
 def test_init_state_sets_subreddit():
     state = init_state("basketball", "Los Angeles Lakers", "Oklahoma City Thunder")
-    assert state.subreddit == "nba"
+    assert state.subreddits == ["nba"]
 
 
 def test_init_state_unknown_sport_defaults_to_sports():
     state = init_state("lacrosse", "Team A", "Team B")
-    assert state.subreddit == "sports"
+    assert state.subreddits == ["sports"]
+
+
+def test_init_state_soccer_sets_multiple_subreddits():
+    state = init_state("soccer", "Brazil", "Argentina")
+    assert state.subreddits == ["soccer", "worldcup"]
 
 
 def test_init_state_extracts_nicknames():
@@ -201,6 +206,45 @@ def test_scan_new_posts_returns_empty_on_api_failure():
     with patch.object(highlights, "_reddit_get", return_value=None):
         found = highlights.scan_new_posts(state)
     assert found == []
+
+
+def test_scan_new_posts_merges_multiple_subreddits():
+    state = init_state("soccer", "Brazil", "Argentina")
+    soccer_response = {
+        "data": {"children": [
+            {"data": _post(post_id="s1", title="[Highlight] Brazil goal", domain="streamable.com", flair="Highlight")},
+        ]}
+    }
+    worldcup_response = {
+        "data": {"children": [
+            {"data": _post(post_id="w1", title="[Highlight] Argentina goal", domain="streamable.com", flair="Highlight")},
+        ]}
+    }
+
+    def _mock_get(path, params=None, retries=3):
+        if "/r/soccer/" in path:
+            return soccer_response
+        if "/r/worldcup/" in path:
+            return worldcup_response
+        return None
+
+    with patch.object(highlights, "_reddit_get", side_effect=_mock_get):
+        found = highlights.scan_new_posts(state)
+
+    assert {p["id"] for p in found} == {"s1", "w1"}
+
+
+def test_scan_new_posts_deduplicates_cross_posts():
+    """A post cross-posted to both subreddits should appear only once."""
+    state = init_state("soccer", "Brazil", "Argentina")
+    shared_post = _post(post_id="x1", title="[Highlight] Brazil goal", domain="streamable.com", flair="Highlight")
+    response = {"data": {"children": [{"data": shared_post}]}}
+
+    with patch.object(highlights, "_reddit_get", return_value=response):
+        found = highlights.scan_new_posts(state)
+
+    assert len(found) == 1
+    assert found[0]["id"] == "x1"
 
 
 # ---------------------------------------------------------------------------

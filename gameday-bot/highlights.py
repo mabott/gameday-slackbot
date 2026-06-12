@@ -40,10 +40,11 @@ REDDIT_BASE = "https://www.reddit.com"
 REDDIT_OAUTH_BASE = "https://oauth.reddit.com"
 
 SUBREDDITS = {
-    "basketball": "nba",
-    "football": "nfl",
-    "baseball": "baseball",
-    "hockey": "hockey",
+    "basketball": ["nba"],
+    "football": ["nfl"],
+    "baseball": ["baseball"],
+    "hockey": ["hockey"],
+    "soccer": ["soccer", "worldcup"],
 }
 
 HIGHLIGHT_FLAIRS = {"highlight", "video", "highlights"}
@@ -62,7 +63,7 @@ HIGHLIGHT_DOMAINS = {
 
 @dataclass
 class HighlightState:
-    subreddit: str
+    subreddits: list
     home_team: str
     away_team: str
     home_nick: str        # last word, e.g. "Thunder"
@@ -72,9 +73,9 @@ class HighlightState:
 
 
 def init_state(sport: str, home_team: str, away_team: str) -> HighlightState:
-    subreddit = SUBREDDITS.get(sport, "sports")
+    subreddits = SUBREDDITS.get(sport, ["sports"])
     return HighlightState(
-        subreddit=subreddit,
+        subreddits=subreddits,
         home_team=home_team,
         away_team=away_team,
         home_nick=home_team.split()[-1],
@@ -194,28 +195,28 @@ def _is_highlight_post(post: dict, subreddit: str = "") -> bool:
     return flair_match or bracket_match  # streamable/v.redd.it: either is enough
 
 
-def find_game_thread(subreddit: str, home_team: str, away_team: str) -> Optional[str]:
+def find_game_thread(subreddits: list, home_team: str, away_team: str) -> Optional[str]:
     """
-    Search for the [Game Thread] post on Reddit. Returns the post ID or None.
-    Used to confirm the game is live; highlights are found via scan_new_posts().
+    Search for the [Game Thread] post on Reddit across the given subreddits.
+    Returns the post ID from the first subreddit that has one, or None.
     """
     home_nick = home_team.split()[-1]
     away_nick = away_team.split()[-1]
     query = f"flair:\"Game Thread\" {home_nick} {away_nick}"
-    data = _reddit_get(
-        f"/r/{subreddit}/search.json",
-        params={"q": query, "sort": "new", "t": "week", "restrict_sr": "1", "limit": 5},
-    )
-    if not data:
-        return None
-
-    for child in data.get("data", {}).get("children", []):
-        d = child.get("data", {})
-        flair = (d.get("link_flair_text") or "").lower()
-        if flair == "game thread":
-            post_id = d.get("id")
-            log.info("Found game thread for %s vs %s: %s", away_nick, home_nick, post_id)
-            return post_id
+    for subreddit in subreddits:
+        data = _reddit_get(
+            f"/r/{subreddit}/search.json",
+            params={"q": query, "sort": "new", "t": "week", "restrict_sr": "1", "limit": 5},
+        )
+        if not data:
+            continue
+        for child in data.get("data", {}).get("children", []):
+            d = child.get("data", {})
+            flair = (d.get("link_flair_text") or "").lower()
+            if flair == "game thread":
+                post_id = d.get("id")
+                log.info("Found game thread for %s vs %s in r/%s: %s", away_nick, home_nick, subreddit, post_id)
+                return post_id
 
     log.warning("No game thread found for %s vs %s", away_nick, home_nick)
     return None
@@ -223,27 +224,27 @@ def find_game_thread(subreddit: str, home_team: str, away_team: str) -> Optional
 
 def scan_new_posts(state: HighlightState) -> list[dict]:
     """
-    Fetch /r/<subreddit>/new and return highlight posts for this game
-    that haven't been seen before. Updates state.seen_ids in place.
+    Fetch /r/<subreddit>/new for each subreddit in state.subreddits and return
+    highlight posts for this game that haven't been seen before.
+    Updates state.seen_ids in place; cross-posts are deduplicated by post ID.
     """
-    data = _reddit_get(f"/r/{state.subreddit}/new.json", params={"limit": 100})
-    if not data:
-        return []
-
     found = []
-    for child in data.get("data", {}).get("children", []):
-        post = child.get("data", {})
-        post_id = post.get("id", "")
-        if post_id in state.seen_ids:
+    for subreddit in state.subreddits:
+        data = _reddit_get(f"/r/{subreddit}/new.json", params={"limit": 100})
+        if not data:
             continue
-        if not _is_highlight_post(post, state.subreddit):
-            continue
-        if not _team_matches(post.get("title", ""), state):
-            continue
-        state.seen_ids.add(post_id)
-        found.append(post)
-        log.info("New highlight: [%s] %s", post.get("domain", ""), post.get("title", "")[:80])
-
+        for child in data.get("data", {}).get("children", []):
+            post = child.get("data", {})
+            post_id = post.get("id", "")
+            if post_id in state.seen_ids:
+                continue
+            if not _is_highlight_post(post, subreddit):
+                continue
+            if not _team_matches(post.get("title", ""), state):
+                continue
+            state.seen_ids.add(post_id)
+            found.append(post)
+            log.info("New highlight: [%s] %s", post.get("domain", ""), post.get("title", "")[:80])
     return found
 
 
@@ -300,43 +301,44 @@ def check_and_post(game_id: str, state: HighlightState):
 # ---------------------------------------------------------------------------
 
 def _run_test(sport: str, home_team: str, away_team: str, date: str):
-    subreddit = SUBREDDITS.get(sport, "sports")
     state = init_state(sport, home_team, away_team)
+    subreddits = state.subreddits
 
-    print(f"\nSearching r/{subreddit} for: {away_team} @ {home_team} ({date})")
+    print(f"\nSearching r/{'+'.join(subreddits)} for: {away_team} @ {home_team} ({date})")
     print("=" * 70)
 
-    game_thread_id = find_game_thread(subreddit, home_team, away_team)
+    game_thread_id = find_game_thread(subreddits, home_team, away_team)
     if game_thread_id:
-        print(f"Game thread found: https://reddit.com/r/{subreddit}/comments/{game_thread_id}")
+        print(f"Game thread found: {game_thread_id}")
     else:
         print("No game thread found (may be too old or not posted yet)")
 
-    print(f"\nScanning r/{subreddit}/new for highlights...")
-    highlights = scan_new_posts(state)
+    print(f"\nScanning {', '.join(f'r/{s}' for s in subreddits)} for highlights...")
+    found = scan_new_posts(state)
 
     # Also try a targeted search for older games
-    if not highlights:
+    if not found:
         print("None in /new — trying date-scoped search...")
         home_nick = home_team.split()[-1]
         away_nick = away_team.split()[-1]
-        data = _reddit_get(
-            f"/r/{subreddit}/search.json",
-            params={
-                "q": f"flair:Highlight {home_nick} {away_nick}",
-                "sort": "new", "t": "week",
-                "restrict_sr": "1", "limit": 25,
-            },
-        )
-        if data:
-            for child in data.get("data", {}).get("children", []):
-                post = child.get("data", {})
-                if post.get("id") not in state.seen_ids:
-                    state.seen_ids.add(post["id"])
-                    highlights.append(post)
+        for subreddit in subreddits:
+            data = _reddit_get(
+                f"/r/{subreddit}/search.json",
+                params={
+                    "q": f"flair:Highlight {home_nick} {away_nick}",
+                    "sort": "new", "t": "week",
+                    "restrict_sr": "1", "limit": 25,
+                },
+            )
+            if data:
+                for child in data.get("data", {}).get("children", []):
+                    post = child.get("data", {})
+                    if post.get("id") not in state.seen_ids:
+                        state.seen_ids.add(post["id"])
+                        found.append(post)
 
-    print(f"\nFound {len(highlights)} highlights:\n")
-    for post in highlights:
+    print(f"\nFound {len(found)} highlights:\n")
+    for post in found:
         ts = datetime.fromtimestamp(post.get("created", 0), tz=timezone.utc)
         score = post.get("score", 0)
         domain = post.get("domain", "")
