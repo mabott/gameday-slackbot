@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -8,6 +9,14 @@ import formatter
 import slack_client
 
 log = logging.getLogger(__name__)
+
+_stop = threading.Event()
+
+
+def request_stop():
+    """Signal all running pollers to exit at their next sleep boundary."""
+    _stop.set()
+
 
 MAX_IN_GAME_POLLS = 72  # 72 × 5 min average = ~6 hrs before giving up
 
@@ -57,9 +66,15 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
     last_bottom_inning = 0  # baseball: last inning where bottom half was observed
 
     for attempt in range(MAX_IN_GAME_POLLS):
+        if _stop.is_set():
+            log.info("Poller for %s stopping due to shutdown signal", game_id)
+            return
+
         summary = espn.get_game_summary(sport, league, game_id)
         if not summary:
-            time.sleep(60)
+            if _stop.wait(timeout=60):
+                log.info("Poller for %s stopping due to shutdown signal", game_id)
+                return
             continue
 
         # --- Hockey: goal alert on score change ---
@@ -106,9 +121,12 @@ def poll_in_game_updates(game_id: str, sport: str, league: str):
             _post_final(game_id, summary, sport)
             return
 
-        # --- Sleep ---
+        # --- Sleep (interruptible so shutdown doesn't hang) ---
         fixed = _FIXED_SLEEP.get(sport)
-        time.sleep(fixed if fixed else _sleep_for_clock(summary.clock_secs))
+        sleep_secs = fixed if fixed else _sleep_for_clock(summary.clock_secs)
+        if _stop.wait(timeout=sleep_secs):
+            log.info("Poller for %s stopping due to shutdown signal", game_id)
+            return
 
     log.warning("In-game poller timed out for %s after %d attempts", game_id, MAX_IN_GAME_POLLS)
 

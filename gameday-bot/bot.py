@@ -12,6 +12,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 
 import db
 import espn
+import poller
 import scheduler as sched
 from config import LOG_LEVEL, DB_PATH, DRY_RUN, TZ
 
@@ -90,6 +91,7 @@ def main():
     # Graceful shutdown on SIGTERM/SIGINT
     def _shutdown(sig, frame):
         log.info("Shutting down…")
+        poller.request_stop()
         _apscheduler.shutdown(wait=False)
         sys.exit(0)
 
