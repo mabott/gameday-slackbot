@@ -257,3 +257,215 @@ def sample_weather():
         wind_mph=12.5,
         precip_pct=60,
     )
+
+
+# ---------------------------------------------------------------------------
+# Soccer GameSummary fixtures
+#
+# ESPN pre-populates both half linescores from kickoff (both value=0), so
+# linescore count can't be used for period detection. These fixtures mirror
+# that real-world behaviour so the tests are realistic.
+# ---------------------------------------------------------------------------
+
+def _soccer_linescores(h1_home, h1_away, h2_home=0, h2_away=0, include_h2=True):
+    """Helper: build ESPN-style linescore lists for a soccer game."""
+    home = [{"displayValue": str(h1_home)}]
+    away = [{"displayValue": str(h1_away)}]
+    if include_h2:
+        home.append({"displayValue": str(h2_home)})
+        away.append({"displayValue": str(h2_away)})
+    return home, away
+
+
+@pytest.fixture
+def soccer_in_progress_h1():
+    """1st half in progress. ESPN pre-populates H2 linescore as "0"."""
+    home_ls, away_ls = _soccer_linescores(0, 0)  # both halves pre-populated
+    return GameSummary(
+        game_id="test-soccer-001",
+        status="in",
+        status_name="STATUS_IN_PROGRESS",
+        home_team="Argentina",
+        away_team="France",
+        home_score=0,
+        away_score=0,
+        home_record="",
+        away_record="",
+        period="1st Half",
+        period_num=1,
+        home_linescores=home_ls,
+        away_linescores=away_ls,
+    )
+
+
+@pytest.fixture
+def soccer_in_progress_h1_with_goal():
+    """1st half in progress after a goal. ESPN updates H1 linescore; H2 stays at 0."""
+    home_ls, away_ls = _soccer_linescores(h1_home=1, h1_away=0)
+    return GameSummary(
+        game_id="test-soccer-001",
+        status="in",
+        status_name="STATUS_IN_PROGRESS",
+        home_team="Argentina",
+        away_team="France",
+        home_score=1,
+        away_score=0,
+        home_record="",
+        away_record="",
+        period="1st Half",
+        period_num=1,
+        home_linescores=home_ls,
+        away_linescores=away_ls,
+    )
+
+
+@pytest.fixture
+def soccer_halftime():
+    """Regulation halftime — period 1 just ended, ESPN sets STATUS_HALFTIME."""
+    home_ls, away_ls = _soccer_linescores(h1_home=1, h1_away=0)
+    return GameSummary(
+        game_id="test-soccer-001",
+        status="in",
+        status_name="STATUS_HALFTIME",
+        home_team="Argentina",
+        away_team="France",
+        home_score=1,
+        away_score=0,
+        home_record="",
+        away_record="",
+        period="HT",
+        period_num=1,
+        home_linescores=home_ls,
+        away_linescores=away_ls,
+    )
+
+
+@pytest.fixture
+def soccer_in_progress_h2():
+    """2nd half in progress."""
+    home_ls, away_ls = _soccer_linescores(h1_home=1, h1_away=0)
+    return GameSummary(
+        game_id="test-soccer-001",
+        status="in",
+        status_name="STATUS_IN_PROGRESS",
+        home_team="Argentina",
+        away_team="France",
+        home_score=1,
+        away_score=0,
+        home_record="",
+        away_record="",
+        period="2nd Half",
+        period_num=2,
+        home_linescores=home_ls,
+        away_linescores=away_ls,
+    )
+
+
+@pytest.fixture
+def soccer_full_time_going_to_et():
+    """
+    Regulation ends 1-1; game goes to extra time. ESPN signals the break
+    with STATUS_HALFTIME at period_num=2 (not STATUS_FULL_TIME, which is
+    only used when the game is truly over).
+    """
+    home_ls, away_ls = _soccer_linescores(h1_home=1, h1_away=0, h2_home=0, h2_away=1)
+    return GameSummary(
+        game_id="test-soccer-001",
+        status="in",
+        status_name="STATUS_HALFTIME",
+        home_team="Argentina",
+        away_team="France",
+        home_score=1,
+        away_score=1,
+        home_record="",
+        away_record="",
+        period="HT ET",
+        period_num=2,
+        home_linescores=home_ls,
+        away_linescores=away_ls,
+    )
+
+
+@pytest.fixture
+def soccer_et_halftime():
+    """Extra-time halftime — period 3 just ended, ESPN sets STATUS_HALFTIME."""
+    home_ls = [
+        {"displayValue": "1"},
+        {"displayValue": "0"},
+        {"displayValue": "1"},
+        {"displayValue": "0"},
+    ]
+    away_ls = [
+        {"displayValue": "0"},
+        {"displayValue": "1"},
+        {"displayValue": "0"},
+        {"displayValue": "0"},
+    ]
+    return GameSummary(
+        game_id="test-soccer-001",
+        status="in",
+        status_name="STATUS_HALFTIME",
+        home_team="Argentina",
+        away_team="France",
+        home_score=2,
+        away_score=1,
+        home_record="",
+        away_record="",
+        period="HT ET",
+        period_num=3,
+        home_linescores=home_ls,
+        away_linescores=away_ls,
+    )
+
+
+@pytest.fixture
+def soccer_final_regulation():
+    """Regular season game ends at full time (no extra time)."""
+    home_ls, away_ls = _soccer_linescores(h1_home=1, h1_away=0, h2_home=1, h2_away=0)
+    return GameSummary(
+        game_id="test-soccer-001",
+        status="post",
+        status_name="STATUS_FULL_TIME",
+        home_team="Argentina",
+        away_team="France",
+        home_score=2,
+        away_score=0,
+        home_record="",
+        away_record="",
+        period="Full Time",
+        period_num=2,
+        home_linescores=home_ls,
+        away_linescores=away_ls,
+    )
+
+
+@pytest.fixture
+def soccer_final_aet():
+    """Knockout game ends after extra time."""
+    home_ls = [
+        {"displayValue": "1"},
+        {"displayValue": "0"},
+        {"displayValue": "1"},
+        {"displayValue": "0"},
+    ]
+    away_ls = [
+        {"displayValue": "0"},
+        {"displayValue": "1"},
+        {"displayValue": "0"},
+        {"displayValue": "0"},
+    ]
+    return GameSummary(
+        game_id="test-soccer-001",
+        status="post",
+        status_name="STATUS_FINAL_AET",
+        home_team="Argentina",
+        away_team="France",
+        home_score=2,
+        away_score=1,
+        home_record="",
+        away_record="",
+        period="Final",
+        period_num=4,
+        home_linescores=home_ls,
+        away_linescores=away_ls,
+    )

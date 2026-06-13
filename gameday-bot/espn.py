@@ -62,6 +62,7 @@ class GameSummary:
     broadcasts: list = field(default_factory=list)
     key_events: list = field(default_factory=list)
     soccer_stats: dict = field(default_factory=dict)
+    status_name: str = ""  # raw ESPN status, e.g. "STATUS_HALFTIME", "STATUS_FULL_TIME"
 
 
 @dataclass
@@ -411,6 +412,7 @@ def get_game_summary(sport: str, league: str, event_id: str) -> Optional[GameSum
         broadcasts=broadcasts,
         key_events=data.get("keyEvents", []),
         soccer_stats=soccer_stats,
+        status_name=status_name,
     )
 
 

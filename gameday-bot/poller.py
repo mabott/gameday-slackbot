@@ -140,6 +140,9 @@ def _detect_period_end(
     Baseball uses plays (period_scores from plays buffer) because inning timing
     is tracked separately via last_bottom_inning.
 
+    Soccer uses STATUS_HALFTIME from summary.status_name — ESPN pre-populates
+    both half linescores from kickoff, so linescore count is unreliable.
+
     Basketball/football/hockey use ESPN header linescores instead of plays —
     linescores accumulate reliably for all completed periods throughout the game,
     whereas the plays buffer only contains recent plays and scrolls off.
@@ -152,6 +155,17 @@ def _detect_period_end(
             past_bottom = "bot" not in current or summary.period_num > last_bottom_inning
             if past_bottom and last_bottom_inning in period_scores:
                 return last_bottom_inning, period_scores
+        return None
+
+    # Soccer: ESPN pre-populates both half linescores from kickoff with value 0,
+    # making linescore count unreliable. Use STATUS_HALFTIME instead — ESPN sets
+    # it at every break between halves (regulation HT, FT→ET break, ET HT).
+    if sport == "soccer":
+        if summary.status_name == "STATUS_HALFTIME" and summary.period_num > last_period_posted:
+            period_scores = _period_scores_from_linescores(
+                summary.home_linescores, summary.away_linescores
+            )
+            return summary.period_num, period_scores
         return None
 
     # Basketball, football, hockey: use linescores from ESPN header.
